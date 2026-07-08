@@ -12,6 +12,7 @@ const legacyRoots = new Set([
   'oscillator',
   'preview_audio_player',
   'sound_abx_tester',
+  'vinyl_explained',
 ]);
 
 const contentTypes = {
@@ -19,6 +20,7 @@ const contentTypes = {
   '.flac': 'audio/flac',
   '.html': 'text/html; charset=utf-8',
   '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.mp3': 'audio/mpeg',

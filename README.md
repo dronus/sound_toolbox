@@ -47,6 +47,14 @@ An interactive web application that slowly animates the process of ΔΣ modulati
 
 ---
 
+[Frieve Vinyl Explained](vinyl_explained/README.md)
+
+A real-time WebGL simulation of a record stylus tracing a vinyl groove with microscopic physics. [> Open App](https://frieve-a.github.io/sound_toolbox/vinyl_explained/vinyl_explained.html)
+
+![Screenshot](vinyl_explained/vinyl_explained.png)
+
+---
+
 [Earphone Cable Impact Analyzer](earphone_cable_impact_analyzer/README.md)
 
 An interactive web application that visualizes the impact of amplifier output impedance and cable parameters on earphone frequency response. [> Open App](https://frieve-a.github.io/sound_toolbox/earphone_cable_impact_analyzer/ecia.html)
@@ -96,6 +104,14 @@ An interactive web application that visualizes the impact of amplifier output im
 DSDで波形をΔΣ変調および再構築するプロセスを、学習しやすいようにスローモーションでアニメーション表示 [> Open App](https://frieve-a.github.io/sound_toolbox/dsd_explained/dsd_explained.html)
 
 ![Screenshot](dsd_explained/assets/screen_shot.png)
+
+---
+
+[Frieve Vinyl Explained](vinyl_explained/README.md)
+
+レコード針が溝をトレースする様子を、ミクロ物理でリアルタイム3D表示するWebGLシミュレーション [> アプリを開く](https://frieve-a.github.io/sound_toolbox/vinyl_explained/vinyl_explained.html#lang=ja)
+
+![Screenshot](vinyl_explained/vinyl_explained_ja.png)
 
 ---
 

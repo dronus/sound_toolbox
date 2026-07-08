@@ -26,6 +26,7 @@ const tools = [
   { dir: 'dsd_explained', text: 'DSD Explained' },
   { dir: 'earphone_cable_impact_analyzer', text: 'Earphone Cable Impact Analyzer' },
   { dir: 'masking_experience', text: 'Auditory Masking Experience' },
+  { dir: 'vinyl_explained', text: 'Vinyl Explained' },
 ];
 
 function escapeXml(value) {

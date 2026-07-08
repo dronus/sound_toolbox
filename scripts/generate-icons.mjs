@@ -17,6 +17,7 @@ const tools = [
   'digital_sampling_visualizer',
   'earphone_cable_impact_analyzer',
   'masking_experience',
+  'vinyl_explained',
 ];
 
 const sizes = [192, 512];

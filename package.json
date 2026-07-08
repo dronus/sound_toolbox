@@ -7,7 +7,9 @@
     "dev": "astro dev --host 127.0.0.1",
     "build": "astro build && node scripts/copy-static-assets.mjs",
     "preview": "astro preview --host 127.0.0.1",
-    "check": "astro check"
+    "check": "astro check",
+    "verify:vinyl": "node scripts/vinyl_explained/verify.mjs",
+    "calibrate:vinyl": "node scripts/vinyl_explained/calibrate.mjs"
   },
   "dependencies": {
     "astro": "^6.4.8",

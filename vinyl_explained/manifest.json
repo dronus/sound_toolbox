@@ -1,0 +1,43 @@
+{
+  "name": "Frieve Vinyl Explained",
+  "short_name": "Vinyl Explained",
+  "description": "A real-time microscopic physics simulation of a record stylus tracing a vinyl groove.",
+  "id": "./vinyl_explained.html",
+  "start_url": "vinyl_explained.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "orientation": "any",
+  "categories": ["education", "music", "utilities"],
+  "icons": [
+    {
+      "src": "icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "vinyl_explained.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Frieve Vinyl Explained in English"
+    },
+    {
+      "src": "vinyl_explained_ja.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Frieve Vinyl Explained in Japanese"
+    }
+  ]
+}

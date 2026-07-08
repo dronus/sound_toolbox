@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A real-time microscopic physics simulation of a record stylus tracing a vinyl groove.">
+<meta name="theme-color" content="#0d0d0d">
+<meta name="application-name" content="Frieve Vinyl Explained">
+<meta name="apple-mobile-web-app-title" content="Vinyl Explained">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192x192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icon-192x192.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Frieve's Sound Toolbox">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Frieve Vinyl Explained">
+<meta property="og:description" content="A real-time microscopic physics simulation of a record stylus tracing a vinyl groove.">
+<meta property="og:url" content="https://frieve-a.github.io/sound_toolbox/vinyl_explained/vinyl_explained.html">
+<meta property="og:image" content="https://frieve-a.github.io/sound_toolbox/vinyl_explained/ogp.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Frieve Vinyl Explained">
+<meta name="twitter:description" content="A real-time microscopic physics simulation of a record stylus tracing a vinyl groove.">
+<meta name="twitter:image" content="https://frieve-a.github.io/sound_toolbox/vinyl_explained/ogp.jpg">
+<title>Frieve Vinyl Explained — Microscopic Stylus/Groove Physics Simulation</title>
+<script>
+  (function () {
+    try {
+      var pref = localStorage.getItem('vinyl-explained-lang');
+      var primary = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+      var lang = pref === 'ja' || pref === 'en' ? pref : primary.toLowerCase().indexOf('ja') === 0 ? 'ja' : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dataset.lang = lang;
+    } catch (e) {
+      document.documentElement.lang = 'en';
+      document.documentElement.dataset.lang = 'en';
+    }
+  })();
+</script>
+<!-- Google Analytics 4 (gtag.js) — fires only on the production host -->
+<script>
+  if (location.hostname === 'frieve-a.github.io') {
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://www.googletagmanager.com/gtag/js?id=G-L4GP1VJ6SZ';
+    document.head.appendChild(s);
+    gtag('js', new Date());
+    gtag('config', 'G-L4GP1VJ6SZ');
+  }
+</script>
+<style>
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19; --surface2: #232322;
+    --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+    --border: rgba(255,255,255,0.10); --grid: #2c2c2a;
+    --accent: #3987e5; --accent2: #199e70; --warn: #c98500; --crit: #d03b3b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  @supports (height: 100dvh) {
+    html, body { height: 100dvh; }
+  }
+  body {
+    background: var(--page); color: var(--ink2);
+    font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; grid-template-columns: 1fr 330px; grid-template-rows: 1fr;
+    min-width: 0; min-height: 0;
+  }
+  #viewWrap { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  #view { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #view:active { cursor: grabbing; }
+
+  /* HUD */
+  #hud {
+    position: absolute; top: 10px; left: 12px; padding: 8px 12px;
+    background: rgba(13,13,13,0.72); border: 1px solid var(--border);
+    border-radius: 8px; font-size: 12px; pointer-events: none;
+    font-variant-numeric: tabular-nums; white-space: pre; color: var(--ink2);
+  }
+  #hud b { color: var(--ink); font-weight: 600; }
+  #scalebar {
+    position: absolute; left: 14px; bottom: 14px; pointer-events: none;
+    font-size: 11px; color: var(--ink2);
+  }
+  #scalebar .bar { height: 4px; background: var(--ink); border-radius: 2px; margin-bottom: 3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+  #flash {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    transition: opacity .4s;
+  }
+  #flash.static { background: radial-gradient(ellipse 16% 12% at 50% 45%, rgba(255,240,180,.3), transparent 70%); opacity: 1; transition: none; }
+  #flash.skip { background: rgba(208,59,59,.25); opacity: 1; transition: none; }
+  #eventlog {
+    position: absolute; right: 12px; top: 10px; font-size: 11px; text-align: right;
+    color: var(--muted); pointer-events: none; font-variant-numeric: tabular-nums;
+    background: rgba(13,13,13,0.6); padding: 4px 8px; border-radius: 6px;
+  }
+  #eventlog .warn { color: var(--warn); } #eventlog .crit { color: var(--crit); }
+
+  /* Sidebar */
+  #panel {
+    background: var(--surface); border-left: 1px solid var(--border);
+    min-width: 0; min-height: 0; overflow-y: auto; padding: 12px 14px 40px;
+  }
+  #panel h1 { font-size: 14px; color: var(--ink); margin: 2px 0 2px; }
+  #panel .sub { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  details.grp { border-top: 1px solid var(--border); padding: 7px 0; }
+  details.grp > summary {
+    cursor: pointer; list-style: none; font-weight: 600; color: var(--ink);
+    font-size: 12.5px; padding: 3px 0; user-select: none;
+  }
+  details.grp > summary::before { content: "▸ "; color: var(--muted); }
+  details.grp[open] > summary::before { content: "▾ "; }
+  .row { display: grid; grid-template-columns: 96px 1fr 74px; gap: 8px; align-items: center; padding: 3px 0; }
+  .row > span { color: var(--ink2); font-size: 12px; }
+  .row output { text-align: right; font-size: 11.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 18px; }
+  select, button {
+    background: var(--surface2); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: #1c5cab; border-color: transparent; }
+  .chk { display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 12px; }
+  .chk input { accent-color: var(--accent); }
+  .btnrow { display: flex; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+  #progress { height: 4px; background: var(--surface2); border-radius: 2px; margin: 6px 0; overflow: hidden; }
+  #progress > div { height: 100%; width: 0%; background: var(--accent); transition: width .15s; }
+
+  /* Measurement results */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .tile { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .tile .v { font-size: 19px; color: var(--ink); font-weight: 650; }
+  .tile .u { font-size: 10.5px; color: var(--muted); }
+  canvas.chart { width: 100%; height: 170px; background: var(--surface); display: block;
+    border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; }
+  .chart-title { font-size: 11.5px; color: var(--ink2); margin-top: 8px; }
+
+  .note { font-size: 11px; color: var(--muted); padding: 4px 0; }
+  #helpBody { font-size: 11.5px; color: var(--ink2); }
+  #helpBody h3 { font-size: 12px; color: var(--ink); margin: 10px 0 3px; }
+  #helpBody p, #helpBody li { margin: 3px 0; }
+  #helpBody ul { padding-left: 16px; }
+  code { background: var(--surface2); padding: 0 4px; border-radius: 4px; font-size: 11px; }
+
+  @media (max-width: 760px) {
+    body {
+      grid-template-columns: 1fr;
+      grid-template-rows: minmax(260px, 58vh) minmax(0, 1fr);
+    }
+    #panel {
+      border-left: 0; border-top: 1px solid var(--border);
+      padding-bottom: 24px;
+    }
+    #hud {
+      max-width: calc(100% - 24px);
+      white-space: pre-wrap;
+    }
+  }
+  @supports (height: 100dvh) {
+    @media (max-width: 760px) {
+      body {
+        grid-template-rows: minmax(260px, 58dvh) minmax(0, 1fr);
+      }
+    }
+  }
+</style>
+</head>
+<body>
+  <div id="viewWrap">
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="eventlog"></div>
+    <div id="scalebar"><div class="bar"></div><span></span></div>
+    <div id="flash"></div>
+  </div>
+
+  <div id="panel">
+    <h1 data-i18n="appName">Frieve Vinyl Explained</h1>
+    <div class="sub" data-i18n-html="subtitle">Microscopic stylus/groove physics simulation<br>
+      Drag=orbit / wheel/pinch=zoom</div>
+
+    <details class="grp" open><summary data-i18n="groups.view">View</summary>
+      <div class="row"><span data-i18n="labels.language">Language</span>
+        <select id="language" style="grid-column: 2/4;">
+          <option value="en" data-i18n="options.langEn">English</option>
+          <option value="ja" data-i18n="options.langJa">Japanese</option>
+        </select></div>
+      <div class="row"><span data-i18n="labels.zoom">Zoom</span><input type="range" id="zoom" min="-2" max="7" step="0.01"><output id="zoomO"></output></div>
+      <div class="row"><span data-i18n="labels.slowdown">Speed</span><input type="range" id="slowdown" min="2" max="6" step="0.01"><output id="slowdownO"></output></div>
+      <div class="chk"><input type="checkbox" id="pause"><label for="pause" data-i18n="labels.pause">Pause</label></div>
+      <div class="chk"><input type="checkbox" id="showContactMarkers"><label for="showContactMarkers" data-i18n="labels.showContactMarkers">Contact markers (red=no contact)</label></div>
+      <div class="chk"><input type="checkbox" id="showLabels" checked><label for="showLabels" data-i18n="labels.showLabels">Part labels (by zoom)</label></div>
+      <div class="chk"><input type="checkbox" id="showMolecules" checked><label for="showMolecules" data-i18n="labels.showMolecules">PVC chain-scale reference (high zoom)</label></div>
+      <div class="chk"><input type="checkbox" id="showGhost"><label for="showGhost" data-i18n="labels.showGhost">Ideal-tracking ghost stylus (offset=tracking error)</label></div>
+      <div class="row"><span data-i18n="labels.stylusTransparency">Stylus transparency</span><input type="range" id="stylusTransparency" min="0" max="100" step="1"><output id="stylusTransparencyO"></output></div>
+      <div class="chk"><input type="checkbox" id="showTimeScale" checked><label for="showTimeScale" data-i18n="labels.showTimeScale">Travel-axis ruler (0=stylus)</label>
+        <select id="timeScaleMode" style="margin-left:auto;">
+          <option value="time" data-i18n="options.time">Time</option>
+          <option value="length" data-i18n="options.length">Distance</option>
+        </select></div>
+    </details>
+
+    <details class="grp" open><summary data-i18n="groups.bitRuler">Bit Ruler (Digital Reference)</summary>
+      <div class="chk"><input type="checkbox" id="showRulerL"><label for="showRulerL" data-i18n="labels.showRulerL">L-wall ruler (modulation axis)</label></div>
+      <div class="chk"><input type="checkbox" id="showRulerR"><label for="showRulerR" data-i18n="labels.showRulerR">R-wall ruler (modulation axis)</label></div>
+      <div class="row"><span data-i18n="labels.rulerBits">Bits</span><input type="range" id="rulerBits" min="4" max="24" step="1"><output id="rulerBitsO"></output></div>
+      <div class="chk"><input type="checkbox" id="rulerAuto" checked><label for="rulerAuto" data-i18n="labels.rulerAuto">Auto-scale with zoom</label></div>
+      <div class="note" id="bitNote"></div>
+    </details>
+
+    <details class="grp" open><summary data-i18n="groups.signal">Signal (Mastering)</summary>
+      <div class="row"><span data-i18n="labels.signalType">Signal</span>
+        <select id="signalType" style="grid-column: 2/4;">
+          <option value="pink" data-i18n="options.pink">Pink noise (music-like)</option>
+          <option value="sine" data-i18n="options.sine">Sine wave (test)</option>
+          <option value="silence" data-i18n="options.silence">Silence (noise view)</option>
+        </select></div>
+      <div class="row" id="sineRow" style="display:none;"><span data-i18n="labels.sineFreq">Frequency</span>
+        <select id="sineFreq" style="grid-column: 2/4;">
+          <option>100</option><option>315</option><option selected>1000</option>
+          <option>3150</option><option>10000</option><option>15000</option>
+        </select></div>
+      <div class="row"><span data-i18n="labels.levelDb">Peak level</span><input type="range" id="levelDb" min="-20" max="20" step="1"><output id="levelDbO"></output></div>
+      <div class="row"><span data-i18n="labels.hfCutoff">HF cutoff</span><input type="range" id="hfCutoff" min="6000" max="24000" step="500"><output id="hfCutoffO"></output></div>
+      <div class="row"><span data-i18n="labels.monoBelow">Bass mono below</span><input type="range" id="monoBelow" min="50" max="1000" step="10"><output id="monoBelowO"></output></div>
+    </details>
+
+    <details class="grp" open><summary data-i18n="groups.record">Record</summary>
+      <div class="row"><span data-i18n="labels.rpm">Speed</span>
+        <select id="rpm" style="grid-column: 2/4;">
+          <option value="33.3333">33⅓ rpm</option>
+          <option value="45">45 rpm</option>
+          <option value="78">78 rpm</option>
+        </select></div>
+      <div class="row"><span data-i18n="labels.radiusMm">Groove radius</span><input type="range" id="radiusMm" min="60" max="146" step="1"><output id="radiusMmO"></output></div>
+      <div class="row"><span data-i18n="labels.roughSigma">Roughness σ</span><input type="range" id="roughSigma" min="-0.3" max="2" step="0.01"><output id="roughSigmaO"></output></div>
+      <div class="row"><span data-i18n="labels.dustRate">Dust deposition</span><input type="range" id="dustRate" min="-4" max="4" step="0.01"><output id="dustRateO"></output></div>
+      <div class="row"><span data-i18n="labels.staticRate">Static</span><input type="range" id="staticRate" min="-4" max="4" step="0.01"><output id="staticRateO"></output></div>
+      <div class="row"><span data-i18n="labels.scratchRate">Scratches</span><input type="range" id="scratchRate" min="-4" max="3" step="0.01"><output id="scratchRateO"></output></div>
+    </details>
+
+    <details class="grp" open><summary data-i18n="groups.stylus">Stylus / Cartridge</summary>
+      <div class="row"><span data-i18n="labels.stylusShape">Stylus shape</span>
+        <select id="stylusShape" style="grid-column: 2/4;">
+          <option value="elliptical" data-i18n="options.elliptical">Elliptical (0.3×0.7 mil)</option>
+          <option value="spherical" data-i18n="options.spherical">Spherical (0.6 mil)</option>
+        </select></div>
+      <div class="row"><span data-i18n="labels.rSide">Side radius</span><input type="range" id="rSide" min="5" max="25" step="0.5"><output id="rSideO"></output></div>
+      <div class="row" id="rScanRow"><span data-i18n="labels.rScan">Scanning radius</span><input type="range" id="rScan" min="2" max="25" step="0.5"><output id="rScanO"></output></div>
+      <div class="row"><span data-i18n="labels.vtfGram">Tracking force</span><input type="range" id="vtfGram" min="0.5" max="5" step="0.1"><output id="vtfGramO"></output></div>
+      <div class="row"><span data-i18n="labels.tipMass">Tip mass</span><input type="range" id="tipMass" min="0.1" max="1.5" step="0.05"><output id="tipMassO"></output></div>
+      <div class="row"><span data-i18n="labels.compliance">Compliance</span><input type="range" id="compliance" min="5" max="35" step="1"><output id="complianceO"></output></div>
+    </details>
+
+    <details class="grp" open><summary data-i18n="groups.analysis">Measurement / Analysis</summary>
+      <div class="btnrow">
+        <button id="measureBtn" class="primary" data-i18n="buttons.measure">Run Measurement</button>
+        <button id="calibBtn" data-i18n="buttons.calibrate">Calibrate to SNR 60dB</button>
+      </div>
+      <div class="row"><span data-i18n="labels.measDur">Measurement time</span>
+        <select id="measDur" style="grid-column: 2/4;">
+          <option value="0.25" data-i18n="options.durFast">0.25 s (fast)</option>
+          <option value="0.5" selected>0.5 s</option>
+          <option value="1" data-i18n="options.durAccurate">1.0 s (more accurate)</option>
+        </select></div>
+      <div id="progress"><div></div></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="chart-title" data-i18n="charts.freqTitle">Frequency response (after phono EQ, 1/24-oct smoothing)</div>
+      <canvas class="chart" id="chartFreq"></canvas>
+      <div class="chart-title" data-i18n="charts.noiseTitle">Noise spectrum (silent groove)</div>
+      <canvas class="chart" id="chartNoise"></canvas>
+      <div class="note" id="measNote">Run Measurement to measure frequency response, SNR, and skip rate for the current settings. It takes a few seconds.</div>
+    </details>
+
+    <details class="grp"><summary data-i18n="groups.help">Guide (Physics Model)</summary>
+      <div id="helpBody">
+        <h3>What is this?</h3>
+        <p>This app simulates an analog stylus tracing a vinyl groove in slow motion, using microscopic physics rather than a visual approximation: Hertz/Winkler contact, viscoelastic damping, and rigid-body dynamics. All core quantities use SI units, and the observable SNR, distortion, and resonance frequencies are checked against real-world orders of magnitude.</p>
+        <h3>Cutting Signal Chain</h3>
+        <p>Pink noise (a music-like long-term spectrum) passes through a 20Hz rumble filter, an 80Hz music LF shaper, bass mono filtering, HF cutoff, RIAA recording pre-emphasis including the Neumann 3.18µs pole, and velocity-to-displacement integration. The result drives 45/45 left and right wall normal displacement. The 0dB reference is a 5cm/s peak wall velocity.</p>
+        <h3>Contact Physics</h3>
+        <p>At 2g VTF, each wall carries roughly 14mN of normal force and the contact pressure reaches about 0.4GPa, well above the yield stress of PVC. Microscopic asperities inside the ~5×7µm contact patch are therefore crushed and averaged. The simulation separates visible roughness from the roughness actually felt by the stylus with an analytic patch-averaging factor.</p>
+        <h3>Tracing Distortion</h3>
+        <p>At each step, the simulator evaluates the stylus scanning-radius parabola against the wall gap, so inner-groove treble loss and pinch-effect distortion emerge from geometry rather than from an added distortion formula. Use sine mode to inspect it directly.</p>
+        <h3>Bit Ruler</h3>
+        <p>The ruler divides a ±15µm wall displacement full scale along each 45° modulation axis. The default roughness σ=13.17nm is calibrated to SNR 60.0dB, or 9.7 effective bits; at the default +12dB peak level this corresponds to DR 72dB. White markers show the instantaneous wall displacement.</p>
+        <h3>Noise Sources</h3>
+        <p>The main noise source is three-scale AR(1) groove roughness representing stamper precision and molecular-scale placement error. Dust follows a physical deposition model with flakes, fibers, and grit; only particles actually pressed by the stylus deform. Static is injected as an electrical pulse, as in a real playback chain, not as a mechanical vibration.</p>
+        <h3>Main Simplifications</h3>
+        <ul>
+          <li>Two degrees of freedom in the groove cross-section; groove-direction vibration and stick-slip are omitted.</li>
+          <li>Roughness is one-dimensional along the groove, with lateral patch averaging handled analytically.</li>
+          <li>Groove walls are rendered as non-overhanging height fields.</li>
+          <li>Wow, flutter, eccentricity, warp, and cartridge electrical loading are outside the model.</li>
+        </ul>
+        <h3>Validated Orders of Magnitude</h3>
+        <ul>
+          <li>1kHz, 5cm/s sine: output error &lt;0.03dB, THD≈0.6%.</li>
+          <li>Contact resonance ~40kHz, cantilever static deflection ~0.3mm, arm resonance ~12Hz.</li>
+          <li>SNR 60.0dB at σ=13.17nm, yielding DR 72dB at the default +12dB peak level.</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+
+  <script type="module" src="src/main.js?v=20260706-sigma13-cache"></script>
+</body>
+</html>

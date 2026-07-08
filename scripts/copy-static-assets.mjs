@@ -19,8 +19,17 @@ const ignoredTopLevel = new Set([
   'src',
 ]);
 
+const ignoredDirs = new Set([
+  '.agents',
+  '.git',
+  '.github',
+  '.qodo',
+  'dev',
+]);
+
 const ignoredFiles = new Set([
   '.gitignore',
+  '.nojekyll',
   '_config.yml',
   'astro.config.mjs',
   'package-lock.json',
@@ -47,6 +56,10 @@ async function copyEntry(source, destination, depth = 0) {
   const sourceStat = await stat(source);
 
   if (sourceStat.isDirectory()) {
+    if (ignoredDirs.has(name)) {
+      return;
+    }
+
     await mkdir(destination, { recursive: true });
     const entries = await readdir(source);
     await Promise.all(
