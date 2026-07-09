@@ -37,7 +37,7 @@ export const CONST = {
   ROUGH_DZ: 50e-9,          // 粗さリングの空間サンプリング 50 nm
 };
 
-export const ZOOM_MIN = 0.01;
+export const ZOOM_MIN = 0.005;
 export const ZOOM_MAX = 1e7;
 export const SLOWDOWN_MIN = 1e2;
 export const SLOWDOWN_MAX = 1e6;
@@ -85,7 +85,7 @@ export function defaultParams() {
 
     // --- 表示 ---
     lang: 'en',             // UI language; main.js overrides this from storage/browser/hash
-    zoom: 30,               // 倍率 (0.01=視野300mm .. 1e7=視野0.3nm)
+    zoom: 30,               // 倍率 (0.005=視野600mm .. 1e7=視野0.3nm)
     slowdown: 3000,         // 実時間比スロー倍率
     showRulerL: false,
     showRulerR: false,
