@@ -1,9 +1,9 @@
 // ============================================================================
-// analysis.js — 測定 (オフライン高速シミュレーション) と解析・グラフ描画
+// analysis.js — Measurement (offline high-speed simulation) and analysis/plotting
 //
-// 測定は表示用とは別のシミュレーションインスタンスを最初から走らせ、
-// 192kHzで出力(針速度→45/45復号→RIAA再生イコライズ)を収集して
-// Welch法PSD / 伝達特性 / SNR / 等価bit / THD / ミストラック率を算出する。
+// Measurement runs a separate simulation instance from the visualization,
+// collecting output at 192kHz (stylus velocity → 45/45 decoding → RIAA playback EQ)
+// to calculate Welch PSD, transfer characteristics, SNR, equivalent bits, THD, and mistrack rate.
 // ============================================================================
 import { CONST, snrToBits } from './params.js?v=20260706-sigma13-cache';
 import { RiaaDeEmphasis } from './dsp.js?v=20260706-sigma13-cache';
@@ -40,7 +40,7 @@ export function fft(re, im) {
   }
 }
 
-// Welch法 片側PSD [unit²/Hz] (Hann窓, 50%オーバーラップ)
+// Welch method one-sided PSD [unit²/Hz] (Hann window, 50% overlap)
 export function welchPsd(x, fs, nfft = 8192) {
   const win = new Float64Array(nfft);
   let winPow = 0;
@@ -68,7 +68,7 @@ export function welchPsd(x, fs, nfft = 8192) {
   return { freqs, psd };
 }
 
-// 帯域RMS (PSD積分)
+// Band RMS (PSD integration)
 export function bandRms(freqs, psd, f1, f2) {
   let p = 0;
   for (let k = 1; k < freqs.length; k++) {
@@ -79,7 +79,7 @@ export function bandRms(freqs, psd, f1, f2) {
   return Math.sqrt(p);
 }
 
-// 1/Nオクターブ対数平滑
+// 1/N-octave logarithmic smoothing
 export function logSmooth(freqs, vals, perOct = 24) {
   const out = { f: [], v: [] };
   let f = 20;
@@ -95,7 +95,7 @@ export function logSmooth(freqs, vals, perOct = 24) {
   return out;
 }
 
-// Goertzel (単一周波数のRMS振幅)
+// Goertzel (RMS amplitude of a single frequency)
 export function goertzelRms(x, fs, f) {
   const n = x.length;
   const w = 2 * Math.PI * f / fs, c = 2 * Math.cos(w);
@@ -105,7 +105,7 @@ export function goertzelRms(x, fs, f) {
   return Math.sqrt(re * re + im * im) * Math.SQRT2 / n;
 }
 
-// ---------------- 測定ランナー ----------------
+// ---------------- Measurement Runner ----------------
 export class Measurement {
   // overrides: paramsへの上書き (例: {signalType:'silence'})
   constructor(params, overrides = {}, duration = 0.4, seed = 20260705) {
@@ -114,7 +114,7 @@ export class Measurement {
     this.seed = seed;
   }
 
-  // チャンク実行 (UIをブロックしない)。 => 結果オブジェクト
+  // Chunked execution (to avoid blocking the UI). => returns result object
   async run(progressCb = null) {
     const p = this.params;
     const groove = new GrooveModel(p, this.seed);
@@ -142,8 +142,9 @@ export class Measurement {
       await new Promise(r => setTimeout(r, 0));
     }
 
-    // RIAA再生ディエンファシス (フォノイコ相当) — 入出力とも適用。
-    // フィルタ過渡を測定窓へ入れないよう、全区間に掛けてから先頭50msを捨てる。
+    // RIAA playback de-emphasis (phono EQ equivalent) — applied to both input and output.
+    // To prevent filter transients from entering the measurement window, 
+    // it is applied to the full range and the first 50ms are discarded.
     const deo = { L: new RiaaDeEmphasis(fs), R: new RiaaDeEmphasis(fs) };
     const dei = { L: new RiaaDeEmphasis(fs), R: new RiaaDeEmphasis(fs) };
     const outDeFullL = new Float64Array(n), outDeFullR = new Float64Array(n);
@@ -153,7 +154,7 @@ export class Measurement {
       inDeFullL[i] = dei.L.process(inL[i]); inDeFullR[i] = dei.R.process(inR[i]);
     }
 
-    // 先頭50ms(整定区間)を捨てる
+    // Discard the first 50ms (settling period)
     const skip = Math.floor(0.05 * fs);
     const oL = outL.subarray(skip, n), oR = outR.subarray(skip, n);
     const outDeL = outDeFullL.subarray(skip, n), outDeR = outDeFullR.subarray(skip, n);
@@ -171,7 +172,7 @@ export class Measurement {
   }
 }
 
-// スペクトル一式 (デエンファシス後, L+R平均パワー)
+// Full spectra (after de-emphasis, L+R average power)
 export function computeSpectra(res, nfft = 8192) {
   const a = welchPsd(res.outDeL, res.fs, nfft);
   const b = welchPsd(res.outDeR, res.fs, nfft);
@@ -182,7 +183,7 @@ export function computeSpectra(res, nfft = 8192) {
   return { freqs: a.freqs, psdOut, psdIn };
 }
 
-// SNR [dB re 5cm/s] とビット等価 (ノイズ測定結果に対して)
+// SNR [dB re 5cm/s] and bit equivalence (based on noise measurement)
 export function computeSnr(res) {
   const { freqs, psd } = (() => {
     const a = welchPsd(res.outDeL, res.fs);
@@ -194,7 +195,7 @@ export function computeSnr(res) {
   return { snr, bits: snrToBits(snr), noiseRms: noise, freqs, psd };
 }
 
-// THD (sine測定時): 基本波と2〜9次高調波
+// THD (during sine measurement): fundamental and 2nd to 9th harmonics
 export function computeThd(res, f0) {
   const x = res.outDeL;
   const fund = goertzelRms(x, res.fs, f0);
@@ -209,7 +210,7 @@ export function computeThd(res, f0) {
   return { thdPct: 100 * Math.sqrt(harmPow) / Math.max(fund, 1e-12), fund, harms };
 }
 
-// σキャリブレーション: 無音測定でSNRを目標値に合わせる (2回反復)
+// σ calibration: adjust SNR to target value using silence measurement (2 iterations)
 export async function calibrateSigma(params, targetDb = 70, progressCb = null, duration = 0.35) {
   let sigma = params.roughSigma;
   for (let it = 0; it < 2; it++) {
@@ -223,7 +224,7 @@ export async function calibrateSigma(params, targetDb = 70, progressCb = null, d
   return sigma;
 }
 
-// ---------------- グラフ描画 (Canvas 2D, ダークサーフェス用検証済パレット) ----------------
+// ---------------- Plotting (Canvas 2D, validated palette for dark surfaces) ----------------
 const CH = {
   surface: '#1a1a19', grid: '#2c2c2a', axis: '#383835',
   muted: '#898781', ink: '#ffffff', ink2: '#c3c2b7',
@@ -246,7 +247,7 @@ function setupCanvas(canvas) {
   return { ctx, w, h };
 }
 
-// 対数周波数軸 + dB軸のラインチャート
+// Line chart with logarithmic frequency axis + dB axis
 // series: [{f:[], v:[](dB), color, label}]
 export function plotLines(canvas, series, opts = {}) {
   const { ctx, w, h } = setupCanvas(canvas);
@@ -266,7 +267,7 @@ export function plotLines(canvas, series, opts = {}) {
   const xOf = f => mL + pw * Math.log(f / f1) / Math.log(f2 / f1);
   const yOf = v => mT + ph * (1 - (v - vMin) / (vMax - vMin));
 
-  // グリッド (細線・後退色)
+  // Grid (thin lines, recessed color)
   ctx.font = FONT;
   ctx.lineWidth = 1;
   ctx.strokeStyle = CH.grid;
@@ -286,17 +287,17 @@ export function plotLines(canvas, series, opts = {}) {
     ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(mL + pw, y); ctx.stroke();
     ctx.fillText(v.toFixed(0), mL - 6, y);
   }
-  // 軸線
+  // Axis lines
   ctx.strokeStyle = CH.axis;
   ctx.beginPath(); ctx.moveTo(mL, mT); ctx.lineTo(mL, mT + ph); ctx.lineTo(mL + pw, mT + ph); ctx.stroke();
-  // 軸ラベル (縦軸単位は目盛り数値列の真上, 横軸単位は軸の右外側)
+  // Axis labels (Y-axis unit above the scale, X-axis unit to the right of the axis)
   ctx.fillStyle = CH.muted;
   ctx.textAlign = 'right'; ctx.textBaseline = 'top';
   ctx.fillText(opts.yLabel ?? 'dB', mL - 6, 2);
   ctx.textAlign = 'left';
   ctx.fillText('Hz', mL + pw + 6, mT + ph + 6);
 
-  // 系列 (2px線) + 右端直接ラベル
+  // Series (2px lines) + direct labels at the right end
   ctx.save();
   ctx.beginPath(); ctx.rect(mL, mT, pw, ph); ctx.clip();
   for (const s of series) {
@@ -311,7 +312,7 @@ export function plotLines(canvas, series, opts = {}) {
     ctx.stroke();
   }
   ctx.restore();
-  // 直接ラベル (右マージン, 縦位置衝突回避)
+  // Direct labels (right margin, avoiding vertical collisions)
   const used = [];
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   for (const s of series) {

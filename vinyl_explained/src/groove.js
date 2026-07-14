@@ -1,16 +1,17 @@
 // ============================================================================
-// groove.js — 溝モデル
+// groove.js — Groove Model
 //
-// 座標系: 溝に沿った弧長 s [m] (パターン座標, 単調増加)。
-// 断面: y上向き, x横方向, 原点=無変調時の溝底頂点。
-//   左壁法線 nL=(+√½,+√½), 右壁法線 nR=(−√½,+√½) (いずれも溝内側向き)
-//   45/45カッティング: 左壁法線変位 = dL(s), 右壁法線変位 = −dR(s)
-//   (剛体Vカッターの並進 offset = dL·uL + dR·uR, uL=(√½,√½), uR=(√½,−√½))
+// Coordinate system: arc length s [m] along the groove (pattern coordinate, monotonically increasing).
+// Cross-section: y-up, x-lateral, origin = groove bottom vertex when unmodulated.
+//   Left wall normal nL=(+√½,+√½), Right wall normal nR=(−√½,+√½) (both pointing inward).
+//   45/45 cutting: Left wall normal displacement = dL(s), Right wall normal displacement = −dR(s)
+//   (Rigid V-cutter translation offset = dL·uL + dR·uR, uL=(√½,√½), uR=(√½,−√½))
 //
-// 物理が感じる実効表面 wallShift = 信号 + 粗さ(felt) + 埃/傷
-// 描画の溝面 wallShiftVisual = 信号 + 粗さ(vis) + 傷のみ —
-//   傷はビニルに彫られた損傷なので溝メッシュを変形させるが、埃は壁に乗った
-//   異物なので溝は変形させず独立粒子として描画する (針はその上を乗り越える)
+// Effective surface felt by physics: wallShift = signal + roughness(felt) + dust/scratches
+// Visual groove surface: wallShiftVisual = signal + roughness(vis) + scratches only —
+//   Scratches are damage carved into the vinyl, so they deform the groove mesh.
+//   Dust consists of foreign particles on the wall, so the groove is not deformed; 
+//   dust is rendered as independent particles (the stylus rides over them).
 // ============================================================================
 import { CONST } from './params.js?v=20260706-sigma13-cache';
 import { SignalGenerator, makeRng, makeGauss } from './dsp.js?v=20260706-sigma13-cache';
@@ -32,20 +33,22 @@ const CORR_FINE = 0.15e-6, CORR_MID = 2e-6, CORR_WAV = 30e-6;
 const FRAC_FINE = 0.60, FRAC_MID = 0.30, FRAC_WAV = 0.10; // 分散比率
 const PATCH_T = 2.5e-6; // 横方向パッチ半幅 [m]
 
-// --- 埃の実世界モデリング ---
-// 堆積: レコード表面へ一様に落下し、着地点で運命が分かれる:
-//   ランド (溝の外, ~40%) → 針に触れない / 溝内 → 壁に付着 or V溝底へ転落。
-//   壁付着確率 exp(−h/4µm): 小粒子は van der Waals 付着が支配的で壁に貼り付き、
-//   大粒子は重力が勝って底へ転がり落ちる (V溝は埃のファネル)。
-// サイズ: 対数正規分布 — 実測の堆積粉塵は小粒子が圧倒的多数・まれに大粒。
-// 種別: flake=皮膚片/紙粉 (柔, 潰れて15%残留) / fiber=衣類繊維 (細長, 柔) /
-//       grit=鉱物粒 (石英等, ほぼ潰れず針を打ち上げ → 通過後に弾き出される)
-// 命中は創発: 針接触線 (壁上距離 t≈rSide) との横ズレ × 粒子の横広がりで実効
-//   高さ hFelt が決まり (縁をかすめれば部分命中)、溝底の粒子は針先底面の
-//   クリアランス (≈(√2−1)·rSide ≈7.5µm) を超える大粒のみ両壁を同時に押す。
-// 潰れ: 弾塑性 — 針球面が実際に押し込んだ場所・深さでのみ降伏 (降伏深さ yld
-//   超過分を恒久変形, 残留下限 res)。各埃の top[] = 針底面の通過最小ギャップ包絡線。
-//   潰れ進行中も針は降伏反力を受け続ける (= ポップ音の源)。
+// --- Real-world Dust Modeling ---
+// Deposition: Particles fall uniformly onto the record surface, and their fate depends on the landing site:
+//   Land (outside groove, ~40%) → no stylus contact / Inside groove → adhere to wall or fall to V-bottom.
+//   Wall adhesion probability exp(−h/4µm): small particles adhere via van der Waals forces,
+//   while large particles are dominated by gravity and roll to the bottom (V-groove acts as a dust funnel).
+// Size: Log-normal distribution — measured deposited dust consists mostly of small particles, rarely large ones.
+// Types: flake=skin/paper (soft, 15% remains after crushing) / fiber=clothing (elongated, soft) /
+//       grit=mineral (quartz, etc., barely crushes, kicks stylus up → ejected after passing).
+// Hit detection is emergent: effective height hFelt is determined by the lateral offset from the
+//   stylus contact line (wall distance t≈rSide) × particle width (partial hits occur at edges).
+//   Particles at the groove bottom only push both walls simultaneously if they exceed the
+//   stylus tip bottom clearance (≈(√2−1)·rSide ≈7.5µm).
+// Crushing: Elasto-plastic — yield occurs only where and how deep the stylus sphere actually presses
+//   (permanent deformation for depth exceeding yield depth yld, with a residual limit res).
+//   Each dust particle's top[] = envelope of the minimum gap passed by the stylus bottom.
+//   The stylus continues to receive yield reaction force during crushing (= source of pop sounds).
 const DUST_KIND = {
   flake: { yld: 0.5e-6, res: 0.15 },
   fiber: { yld: 0.2e-6, res: 0.10 },
@@ -97,7 +100,7 @@ export class GrooveModel {
     this.activeDust = [];     // 針近傍の埃 (塑性圧縮の対象キャッシュ, advanceDustで更新)
   }
 
-  // s [m] まで生成済みであることを保証
+  // Ensure generation up to sMax [m]
   ensure(sMax) {
     const nSig = Math.ceil(sMax / this.dzSig) + 4;
     while (this.sigN < nSig) {
@@ -128,7 +131,7 @@ export class GrooveModel {
     }
   }
 
-  // 信号成分のみ (Catmull-Rom 立方補間 — C1連続で接触力のδ̇も滑らか)
+  // Signal component only (Catmull-Rom cubic interpolation — C1 continuous for smooth contact force δ̇)
   signalShift(wall, s) {
     const f = s / this.dzSig;
     let n = Math.floor(f);
@@ -142,7 +145,7 @@ export class GrooveModel {
       + t * (3 * (p1 - p2) + p3 - p0)));
   }
 
-  // 粗さ成分 (線形補間)。felt=true で針が感じる粗さ(パッチ2D平均化済)
+  // Roughness component (linear interpolation). felt=true for roughness felt by stylus (2D patch averaged)
   roughShift(wall, s, felt = false) {
     const f = s / CONST.ROUGH_DZ;
     let n = Math.floor(f);
@@ -155,12 +158,12 @@ export class GrooveModel {
     return arr[i0] * (1 - t) + arr[i1] * t;
   }
 
-  // 埃/傷成分
-  //  - hFelt: 針接触線での実効高さ (横ズレ減衰済)。wall=3(溝底)は両壁を等しく押す
-  //  - amp: 出現時の成長係数 0→1 (瞬間出現のポップを防ぐ, 針到達より十分前に完了)
-  //  - top: 塑性圧痕包絡線 — 針底面が実際に通過した最小ギャップ (plasticCrushが更新)。
-  //    針が押した場所だけが潰れるため、飛び越えた/掠らなかった埃は無傷のまま残る
-  //  - 傷: 中央の削れ(負) + 前後の塑性バリ(正)。正味で接触喪失も打ち上げも起こり得る
+  // Dust/Scratch components
+  //  - hFelt: effective height at the stylus contact line (lateral offset attenuated). wall=3 (bottom) pushes both walls equally.
+  //  - amp: growth coefficient 0→1 upon appearance (prevents pops from instant appearance, completes well before stylus arrival).
+  //  - top: plastic indentation envelope — minimum gap actually passed by the stylus bottom (updated by plasticCrush).
+  //    Only the parts pressed by the stylus are crushed; particles jumped over or barely grazed remain intact.
+  //  - Scratches: central gouge (negative) + leading/trailing plastic burrs (positive). Can cause contact loss or lift-off.
   dustShift(wall, s, scratchOnly = false) {
     let d = 0;
     for (let k = 0; k < this.dust.length; k++) {
@@ -198,11 +201,11 @@ export class GrooveModel {
     return d;
   }
 
-  // 塑性圧縮 (物理サブステップごとに呼ばれる):
-  //   針球面の底面高さ ballH(s) = dz²/(2·rScan) − base − 壁面変位(埃以外)
-  //   埃が ballH + 降伏深さ(yld, 種別依存) を超える場所は降伏し、包絡線 top を
-  //   そこまで切り下げる。残留下限 res·(局所高さ) = 圧密限界 (grit はほぼ潰れない)。
-  //   base = rSide − (針の壁面距離)。wall=3(溝底) は両壁のどちらの接触でも潰れる
+  // Plastic crushing (called every physics substep):
+  //   Stylus sphere bottom height ballH(s) = dz²/(2·rScan) − base − wall displacement (excluding dust).
+  //   Where dust exceeds ballH + yield depth (yld, type-dependent), it yields, and the envelope top
+  //   is clipped to that level. Residual limit res·(local height) = compaction limit (grit barely crushes).
+  //   base = rSide − (stylus wall distance). wall=3 (bottom) is crushed by contact with either wall.
   plasticCrush(wall, sTip, base, rScan, win) {
     for (const D of this.activeDust) {
       if (D.wall !== wall && D.wall !== 3) continue;
@@ -231,7 +234,7 @@ export class GrooveModel {
     }
   }
 
-  // 埃の潰れ度 0(無傷)–1(完全圧縮) — 描画用 (中心の残存高さ比から算出)
+  // Dust crush fraction 0(intact)–1(fully compressed) — for rendering (calculated from residual height ratio at center)
   dustCrushFrac(D) {
     if (!D.top || !(D.amp > 0) || !(D.hFelt > 0)) return 0;
     const h = D.hFelt * D.amp;
@@ -240,36 +243,36 @@ export class GrooveModel {
     return Math.min(1, (1 - cap / h) / (1 - D.res));
   }
 
-  // 壁面の総変位 [m] (法線方向, 正=針側へ隆起)
-  // 物理(接触)用: パッチ平均化済み粗さを使用
+  // Total wall displacement [m] (normal direction, positive = protrusion toward stylus)
+  // For physics (contact): uses patch-averaged roughness
   wallShift(wall, s) {
     return this.signalShift(wall, s) + this.roughShift(wall, s, true) + this.dustShift(wall, s);
   }
 
-  // 描画用: 実際に存在する(見える)粗さ + 傷のみ。
-  // 埃は溝の変形ではなく独立粒子としてrender側が描く (溝メッシュは元のまま)
+  // For rendering: only actual (visible) roughness + scratches.
+  // Dust is rendered as independent particles by the renderer, not as groove deformation (groove mesh remains original).
   wallShiftVisual(wall, s) {
     return this.signalShift(wall, s) + this.roughShift(wall, s, false) + this.dustShift(wall, s, true);
   }
 
-  // 入力基準速度 (測定用, L/Rチャンネル)
+  // Input reference velocity (for measurement, L/R channels)
   refVelocity(s) {
     const n = Math.round(s / this.dzSig) & (SIG_LEN - 1);
     return { vL: this.refVelL[n], vR: this.refVelR[n] };
   }
 
-  // 埃の生成/潰し処理: 針位置 sStylus, 経過レコード時間 dt
-  // rateScale: 通常は1。検証用にだけPoisson発生率を明示加速できる。
+  // Dust generation/crushing process: stylus position sStylus, elapsed record time dt
+  // rateScale: normally 1. Can be explicitly accelerated for Poisson occurrence rate during verification.
   advanceDust(sStylus, dt, grooveVel, rateScale = 1) {
     const p = this.p;
-    // 出現距離: 体感~2.5秒先。下限16µm = 接触走査窓(±6.4µm)の外を保証
+    // Appearance distance: approx 2.5s ahead. Lower limit 16µm ensures it's outside the contact scan window (±6.4µm).
     const ahead = Math.min(400e-6, Math.max(16e-6, grooveVel * 2.5 / rateScale));
-    // ampRate: 針到達時間の~25%で成長完了 (到達時には必ず全高) [1/s 記録時間]
+    // ampRate: growth completes in ~25% of the time until stylus arrival (always full height upon arrival) [1/s record time]
     if (p.dustRate > 0 && this.dustRng() < p.dustRate * dt * rateScale) {
       const r = this.dustRng;
       const D = { s: sStylus + ahead * (0.5 + r()), amp: 0, crushed: false };
       D.ampRate = grooveVel / (0.25 * (D.s - sStylus));
-      // 種別とサイズ (対数正規: 小粒子が多数, まれに大粒)
+      // Type and size (log-normal: mostly small particles, rarely large ones)
       const kr = r();
       if (kr < 0.55) {
         D.kind = 'flake';
@@ -289,7 +292,7 @@ export class GrooveModel {
       }
       D.yld = DUST_KIND[D.kind].yld;
       D.res = DUST_KIND[D.kind].res;
-      // 落下位置: ~40%はランド (針経路の外)。溝内は壁付着 or V溝底へ転落
+      // Landing position: ~40% on land (outside stylus path). Inside groove: adhere to wall or fall to V-bottom.
       const pr = r();
       if (pr < 0.4) {
         D.loc = 'land';
@@ -297,7 +300,7 @@ export class GrooveModel {
         D.landX = (2 + 30 * r()) * 1e-6;         // 溝縁からの距離
         D.hFelt = 0;
       } else if (D.kind === 'fiber' || r() < Math.exp(-D.h / 4e-6)) {
-        // 壁付着: 針接触線 (t≈rSide) との横ズレ分だけ実効高さが減衰 (縁かすり)
+        // Wall adhesion: effective height is attenuated by the lateral offset from the stylus contact line (t≈rSide) (edge grazing)
         D.loc = 'wall';
         D.wall = r() < 0.5 ? 0 : 1;
         D.t = (3 + 39 * r()) * 1e-6;             // 壁上距離 (底フィレット上〜ランド縁)
@@ -305,8 +308,8 @@ export class GrooveModel {
         const dLat = (D.t - p.rSide) / lam;
         D.hFelt = D.h * Math.exp(-dLat * dLat);
       } else {
-        // 溝底に静置 (90°Vで頂点高さ = (√2+1)·h/2)。針先底面クリアランス
-        // (√2−1)·rSide を超える大粒のみ両壁を同時に押す (モノラルの「ドスッ」)
+        // Resting at groove bottom (vertex height = (√2+1)·h/2 for 90°V).
+        // Only large particles exceeding the stylus tip bottom clearance (≈(√2−1)·rSide) push both walls simultaneously (monaural "thump").
         D.loc = 'bottom';
         D.wall = 3;
         const top = (Math.SQRT2 + 1) * 0.5 * D.h;
@@ -314,8 +317,8 @@ export class GrooveModel {
       }
       this.dust.push(D);
     }
-    // 傷 (スクラッチ): 横断傷は単純な障害物ではなく、削れた谷とその前後に押し出された
-    // バリの組み合わせとして扱う。バリは針を打ち上げ、削れは接触喪失や片ch欠落を起こす。
+    // Scratches: transverse scratches are not simple obstacles, but a combination of a carved valley
+    // and plastic burrs pushed out before and after it. Burrs lift the stylus, while gouges cause contact loss or channel dropouts.
     if (p.scratchRate > 0 && this.dustRng() < p.scratchRate * dt * rateScale) {
       const r = this.dustRng;
       const sAhead = ahead * (0.5 + r());
@@ -361,19 +364,19 @@ export class GrooveModel {
         s: sStylus + sAhead,
         wall: 2,
         scratchKind,
-        gouge,                         // 中央欠損の深さ
-        burr,                          // 縁バリの高さ
-        h: Math.max(gouge, burr),       // 描画・寿命管理用の代表高さ
+        gouge,                         // depth of central gouge
+        burr,                          // height of edge burr
+        h: Math.max(gouge, burr),       // representative height for rendering/lifetime management
         w: width,
-        lipOffset: 0.75 + 0.55 * r(),   // 中央削れからバリ頂点までの距離 (w単位)
-        lipW: 0.22 + 0.28 * r(),        // バリの鋭さ
-        gougeW: 0.70 + 0.45 * r(),      // 削れ谷の広がり
+        lipOffset: 0.75 + 0.55 * r(),   // distance from central gouge to burr peak (in w units)
+        lipW: 0.22 + 0.28 * r(),        // burr sharpness
+        gougeW: 0.70 + 0.45 * r(),      // gouge valley width
         lipLead,
         lipTrail,
         wallL,
         wallR,
-        skew: (r() - 0.5) * width * 1.4, // 斜め傷: L/R壁で通過タイミングが少しずれる
-        asym: wallR,                     // 旧データ互換用
+        skew: (r() - 0.5) * width * 1.4, // diagonal scratch: passing timing differs slightly between L/R walls
+        asym: wallR,                     // for legacy data compatibility
         amp: 0,
         ampRate: grooveVel / (0.25 * sAhead),
         crushed: false,
@@ -383,7 +386,7 @@ export class GrooveModel {
     for (let k = this.dust.length - 1; k >= 0; k--) {
       const D = this.dust[k];
       if (D.dying) {
-        // 個数上限による除去: 成長と同レートで縮小し、消えてから配列から外す
+        // Removal due to count limit: shrink at the same rate as growth, then remove from array
         D.amp -= dt * D.ampRate;
         if (D.amp <= 0) this.dust.splice(k, 1);
         continue;
@@ -392,17 +395,17 @@ export class GrooveModel {
       if (!D.scratch && !D.crushed && sStylus > D.s + 2 * D.w) {
         D.crushed = true;
         if (D.touched) {
-          this.dustHits++;                       // 実際に針が触れた粒子のみ計数
-          if (D.kind === 'grit') D.dying = true; // 硬い鉱物粒は弾き飛ばされる
+          this.dustHits++;                       // count only particles actually touched by the stylus
+          if (D.kind === 'grit') D.dying = true; // hard mineral particles are kicked away
         }
       }
     }
-    // 遠く後方 (視野外) の埃は即破棄。個数上限超過分は最古からフェードアウト
+    // Immediately discard dust far behind (outside view). Fade out oldest if count limit exceeded.
     while (this.dust.length && this.dust[0].s < sStylus - 5e-3) this.dust.shift();
     for (let k = 0; k < this.dust.length - 128; k++) this.dust[k].dying = true;
     while (this.dust.length > 176) this.dust.shift();
-    // 針近傍の埃キャッシュ (物理サブステップの塑性圧縮が全走査しないため)。
-    // 針に届き得る粒子 (hFelt>0) のみ — ランドや小粒の底埃は物理対象外
+    // Dust cache near the stylus (to avoid full scan during physics substep plastic crushing).
+    // Only particles that can reach the stylus (hFelt>0) — land dust or small bottom dust are excluded.
     this.activeDust.length = 0;
     for (const D of this.dust) {
       if (!D.scratch && D.hFelt > 1e-9 && Math.abs(D.s - sStylus) < 4 * D.w + 16e-6) {

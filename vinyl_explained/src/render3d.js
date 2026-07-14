@@ -1,12 +1,14 @@
 // ============================================================================
-// render3d.js — Three.js による3D描画
+// render3d.js — 3D Rendering via Three.js
 //
-// ワールド座標: 1unit = 1µm。原点=無変調溝底頂点(針位置)。y上, x横,
-// z: 奥(-z)=未再生 → 手前(+z)=再生済み。溝が奥から手前へスクロールする。
-// パターン座標 s との対応: worldZ = (sStylus − s)·1e6
+// World coordinates: 1 unit = 1µm. Origin = groove bottom vertex when unmodulated (stylus position).
+// y-up, x-lateral, z: back (-z) = unplayed → front (+z) = played.
+// The groove scrolls from back to front.
+// Correspondence with pattern coordinate s: worldZ = (sStylus − s)·1e6
 //
-// 溝メッシュは物理と同じ wallShiftVisual() から毎フレーム再構築。
-// 非一様グリッド (視野中心が密, 外側は幾何級数) で超高倍率でも破綻しない。
+// Groove mesh is rebuilt every frame from wallShiftVisual(), same as physics.
+// Uses a non-uniform grid (dense at center, geometric progression outwards)
+// to prevent artifacts even at ultra-high magnification.
 // ============================================================================
 import * as THREE from '../lib/three.module.js';
 import { CONST, ZOOM_MIN, ZOOM_MAX, hertzK, vtfNewton } from './params.js?v=20260706-sigma13-cache';
@@ -16,9 +18,10 @@ import { textFor } from './i18n.js?v=20260706-sigma13-cache';
 const M2W = 1e6; // meters → world(µm)
 const UP = new THREE.Vector3(0, 1, 0);
 
-// 溝断面プロファイル (実装は頂点シェーダ内 grooveProfile): y(x) [µm]
-// 左壁: y = √2·wL − x, 右壁: y = √2·wR + x, 底は滑らかな円弧, 上端は縁丸め。
-// 隣接溝の対向壁との min合成で、大変位時に嶺へ食い込む開口も正しく描く
+// Groove cross-section profile (implemented as grooveProfile in vertex shader): y(x) [µm]
+// Left wall: y = √2·wL − x, Right wall: y = √2·wR + x, bottom is a smooth arc, top has edge rounding.
+// min-composition with opposite walls of adjacent grooves correctly renders openings
+// that cut into the ridge during large displacements.
 const LAND_Y = CONST.GROOVE_DEPTH * M2W;      // 30 µm
 const K_BOTTOM = 2 * CONST.GROOVE_BOTTOM_R * M2W; // 底フィレット
 const K_EDGE = 1.5;                            // 縁の丸め [µm]
@@ -304,8 +307,8 @@ export class Renderer3D {
     this.renderer.toneMappingExposure = 1.2;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0d0d0d);
-    // ゴースト専用シーン: 本シーンの後に深度クリアして重ね描きすることで
-    // 実針とのZ前後関係によるちらつきを根絶し、常に半透明で最前面に見せる
+    // Dedicated ghost scene: by clearing depth and overlaying after the main scene,
+    // Z-fighting/flickering with the real stylus is eliminated, ensuring it's always semi-transparent and on top.
     this.ghostScene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1e7);
 
@@ -322,19 +325,19 @@ export class Renderer3D {
     fill.position.set(-1.2, 0.6, -0.6);
     this.scene.add(hemi, key, fill);
     this.keyLight = key;
-    // ヘッドランプ (カメラ追従, 高倍率で影側の壁面を検査可能にする)
+    // Headlamp (follows camera, allows inspection of shadowed wall surfaces at high magnification)
     this.headLamp = new THREE.PointLight(0xffffff, 0.0, 0, 2);
     this.scene.add(this.headLamp);
     this._buildRecordDisk();
 
-    // 溝メッシュ: GPU頂点シェーダ変位方式。
-    // 壁変位を毎フレーム floatテクスチャ (視野に自動適応した範囲) にアップロードし、
-    // 変形と法線計算をGPUで実行 — CPUコストはテクスチャ生成のみで、
-    // 最大ズームでは z方向 実質0.0005nm刻みの超高解像度になる。
-    // 溝は本溝 + 隣接±1 の3列。それ以遠は静的ベイクの遠景 (farField)。
+    // Groove mesh: GPU vertex shader displacement method.
+    // Wall displacements are uploaded every frame to a float texture (range auto-adapted to view),
+    // and deformation/normal calculations are performed on the GPU — CPU cost is only texture generation.
+    // At maximum zoom, it achieves ultra-high resolution (effectively 0.0005nm steps in z).
+    // The mesh consists of 3 columns: the main groove + adjacent ±1. Beyond that is a static baked far-field.
     this.mainGroove = this._makeGrooveShaderMesh(160, 1024, 2048, 0);
-    // nbrOff: 左隣/右隣の溝の信号sオフセット (このメッシュの sBase 基準)。
-    // min合成用に隣溝の対向壁シフトをテクスチャ z/w チャネルへ供給する
+    // nbrOff: signal s offset of left/right adjacent grooves (relative to this mesh's sBase).
+    // Supplies opposite wall shifts of adjacent grooves to texture z/w channels for min-composition.
     this.mainGroove.nbrOff = [0.5e-3, 0.5e-3];
     this.scene.add(this.mainGroove.mesh);
     this.neighborGrooves = [];
@@ -736,10 +739,10 @@ vec3 grooveNormalCalc(vec2 pq) {
     return { mesh, tex, data, uni, texN, sOffset };
   }
 
-  // 溝テクスチャ更新: [zMin,zMax](world µm) をカバーする texN サンプル。
-  // サンプリング格子は溝のパターン座標に固定した絶対格子 (0.1nm×2^k ラダー)
-  // にスナップする — 画面基準で取り直すとスクロールに伴い位相が変わり、
-  // 同じ場所の微細形状が毎フレーム違って見える (リサンプリング揺らぎ) ため。
+  // Groove texture update: texN samples covering [zMin, zMax] (world µm).
+  // The sampling grid snaps to an absolute grid fixed to the groove pattern coordinates (0.1nm × 2^k ladder)
+  // — this prevents phase shifts during scrolling that would occur if sampled relative to the screen,
+  // which would cause micro-structures to appear to jitter every frame (resampling aliasing).
   _updateGrooveTex(gm, groove, sBase, zMin, zMax) {
     const n = gm.texN;
     const dsRaw = (zMax - zMin) / (n - 1);
@@ -830,8 +833,8 @@ vec3 grooveNormalCalc(vec2 pq) {
     fillWall(1, sim.diag.dR, sim.zcR);
   }
 
-  // 高さ場グリッドの解析法線: n = normalize(−∂y/∂x, 1, −∂y/∂z)
-  // computeVertexNormals よりも高速かつ非一様グリッドでファセットが出ない
+  // Analytical normals for height-field grid: n = normalize(−∂y/∂x, 1, −∂y/∂z)
+  // Faster than computeVertexNormals and avoids facets on non-uniform grids
   static _heightFieldNormals(pos, nrm, nz, nx) {
     for (let i = 0; i < nz; i++) {
       const i0 = Math.max(0, i - 1), i1 = Math.min(nz - 1, i + 1);
@@ -850,10 +853,10 @@ vec3 grooveNormalCalc(vec2 pq) {
   }
 
 
-  // 針先〜カートリッジまで実寸で構築 (単位µm):
-  //  ダイヤ: 先端半径rSide + 円錐(頂角44°) 高さ0.12mm + 面取りシャンク
-  //  カンチレバー: 平坦な潰し先端 + テーパーアルミパイプ φ0.21→0.46mm, 長さ6.5mm, 仰角21° (VTA)
-  //  ゴムダンパー + テンションワイヤ + マグネット + ヨーク + ボディ(14×6.5×15mm)
+  // Build stylus to cartridge at actual scale (units: µm):
+  //  Diamond: tip radius rSide + cone (44° apex angle) height 0.12mm + beveled shank
+  //  Cantilever: flat crushed tip + tapered aluminum pipe φ0.21→0.46mm, length 6.5mm, angle 21° (VTA)
+  //  Rubber damper + tension wire + magnet + yoke + body (14×6.5×15mm)
   _buildStylus() {
     if (this.stylusGroup) {
       this._disposePartLabels();
@@ -883,8 +886,8 @@ vec3 grooveNormalCalc(vec2 pq) {
     this.matDiaEdge = matDiaEdge;
     this.updateStylusMaterial();
 
-    // --- ダイヤモンドチップ: 回転体 (球先端 → 円錐 頂角32°) ---
-    // スリムな円錐: ランド上へのオーバーハングを抑え「めり込み」に見えない
+    // --- Diamond tip: lathe geometry (spherical tip → cone, 32° apex angle) ---
+    // Slim cone: minimizes overhang over the land to avoid looking like it's "sinking in"
     const coneHalf = 16 * Math.PI / 180;
     const a0 = Math.PI / 2 - coneHalf;      // 球→円錐 接続角
     const pts = [];
@@ -902,20 +905,20 @@ vec3 grooveNormalCalc(vec2 pq) {
     tip.scale.z = rZ / rS;                    // 楕円針: 進行方向を圧縮
     g.add(tip);
 
-    // --- 面取りシャンク (nudeダイヤ 0.12mm角) ---
+    // --- Beveled shank (nude diamond, 0.12mm square) ---
     const shankW = 115, shankH = 105, shankD = 115;
     const shank = new THREE.Mesh(makeBeveledBoxGeometry(shankW, shankH, shankD, 10), matDia);
     shank.position.y = -rS + H + 52;
     shank.add(new THREE.LineSegments(new THREE.EdgesGeometry(shank.geometry, 15), matDiaEdge));
     g.add(shank);
 
-    // --- カンチレバー: テーパーパイプ (先端φ210 → 支点φ460, 6.5mm, 21°) ---
+    // --- Cantilever: tapered pipe (tip φ210 → pivot φ460, 6.5mm, 21°) ---
     const matAl = matNeedleMetal;
     const vta = 21 * Math.PI / 180;
     const dir = new THREE.Vector3(0, Math.sin(vta), -Math.cos(vta));
     const cantLen = 6500;
     const end = new THREE.Vector3(0, -rS + H + 160, -60); // ダイヤ取付点
-    // 実機の接着/潰し加工に見える平坦な先端。ダイヤ上面をまたぎ、チューブ端と重ねる。
+    // Flat tip to mimic real-world adhesive/crushing process. Spans the diamond top and overlaps the tube end.
     const flatAngle = 8 * Math.PI / 180;
     const flatDir = new THREE.Vector3(0, Math.sin(flatAngle), -Math.cos(flatAngle));
     const flatLen = 720, flatThick = 78;
@@ -931,7 +934,7 @@ vec3 grooveNormalCalc(vec2 pq) {
     cant.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     g.add(cant);
 
-    // --- サスペンション: ゴムダンパー(ドーナツ) + マグネット + ヨーク ---
+    // --- Suspension: rubber damper (donut) + magnet + yoke ---
     const matRubber = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.9 });
     const damper = new THREE.Mesh(new THREE.TorusGeometry(260, 130, 12, 32), matRubber);
     damper.position.copy(pivot).addScaledVector(dir, -350);
@@ -947,8 +950,8 @@ vec3 grooveNormalCalc(vec2 pq) {
     yoke.position.copy(pivot).addScaledVector(dir, 950);
     g.add(yoke);
 
-    // --- カートリッジボディ (16×12.5×17mm) ---
-    // 実機準拠: 盤面クリアランス3.2mm, 針先→取付面 15.7mm (規格15〜18mm内)
+    // --- Cartridge body (16×12.5×17mm) ---
+    // Based on real hardware: record surface clearance 3.2mm, tip to mounting surface 15.7mm (within 15-18mm spec)
     const CLEAR = 3200;                        // 盤面〜ボディ底 [µm]
     const CART_H = 12500;                      // ボディ高さ [µm]
     const matBody = new THREE.MeshStandardMaterial({
@@ -958,12 +961,12 @@ vec3 grooveNormalCalc(vec2 pq) {
     const body = new THREE.Mesh(new THREE.BoxGeometry(16000, CART_H, 17000), matBody);
     body.position.set(0, CLEAR + CART_H / 2, -4300 - 8500);
     g.add(body);
-    // 前面ノーズ (カンチレバーが突き出る部分, ボディ底より下がる)
+    // Front nose (where cantilever emerges, extends below body bottom)
     const nose = new THREE.Mesh(new THREE.BoxGeometry(6000, 2600, 3200), matYoke);
     nose.position.set(0, 2850, -5700);
     g.add(nose);
 
-    // --- ヘッドシェル (13×2.5×52mm, ボディ上面=取付面) ---
+    // --- Headshell (13×2.5×52mm, body top = mounting surface) ---
     const matShell = new THREE.MeshStandardMaterial({ color: 0x8f939a, roughness: 0.4, metalness: 0.85 });
     const shellTopY = CLEAR + CART_H;          // 取付面 (盤面から15.7mm)
     const shell = new THREE.Mesh(new THREE.BoxGeometry(13000, 2500, 52000), matShell);
@@ -977,11 +980,11 @@ vec3 grooveNormalCalc(vec2 pq) {
       g.add(screw);
     }
 
-    // --- トーンアーム: 水平ストレートアーム ---
-    // 実効長 230mm (9インチ標準), パイプφ11mm, 下面が盤面から30mm
+    // --- Tonearm: horizontal straight arm ---
+    // Effective length 230mm (9-inch standard), pipe φ11mm, bottom 30mm from record surface
     const armY = 30000 + 5500;                 // パイプ中心高さ [µm]
     const pivotZ = -230000;                    // 針→ピボット 23cm
-    // スワンネック (ヘッドシェル後端 → コレットへ持ち上げ)
+    // Swan neck (lifts from headshell rear to collet)
     const neckFrom = new THREE.Vector3(0, shellTopY + 2500, -38000);
     const neckTo = new THREE.Vector3(0, armY, -60000);
     const neckDir = neckTo.clone().sub(neckFrom);
@@ -990,27 +993,27 @@ vec3 grooveNormalCalc(vec2 pq) {
     neck.position.copy(neckFrom).addScaledVector(neckDir, 0.5);
     neck.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), neckDir.clone().normalize());
     g.add(neck);
-    // コレット (バヨネットリング)
+    // Collet (bayonet ring)
     const matDark = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.5, metalness: 0.6 });
     const collet = new THREE.Mesh(new THREE.CylinderGeometry(8000, 8000, 13000, 24), matDark);
     collet.position.set(0, armY, -66000);
     collet.rotation.x = Math.PI / 2;
     g.add(collet);
-    // アームパイプ (水平, コレット後端→ピボット)
+    // Arm pipe (horizontal, collet rear → pivot)
     const matArm = new THREE.MeshStandardMaterial({ color: 0xb9bcc2, roughness: 0.3, metalness: 0.9 });
     const pipeLen = -72500 - pivotZ;
     const armPipe = new THREE.Mesh(new THREE.CylinderGeometry(5500, 5500, pipeLen, 24), matArm);
     armPipe.position.set(0, armY, -72500 - pipeLen / 2);
     armPipe.rotation.x = Math.PI / 2;
     g.add(armPipe);
-    // ピボットハウジング + 支柱
+    // Pivot housing + pillar
     const housing = new THREE.Mesh(new THREE.BoxGeometry(26000, 34000, 26000), matDark);
     housing.position.set(0, armY, pivotZ - 13000);
     g.add(housing);
     const pillar = new THREE.Mesh(new THREE.CylinderGeometry(9000, 9000, 46000, 20), matDark);
     pillar.position.set(0, armY - 17000 - 23000, pivotZ - 13000);
     g.add(pillar);
-    // カウンターウェイト
+    // Counterweight
     const cw = new THREE.Mesh(new THREE.CylinderGeometry(18000, 18000, 28000, 28), matDark);
     cw.position.set(0, armY, pivotZ - 13000 - 13000 - 25000);
     cw.rotation.x = Math.PI / 2;
@@ -1031,9 +1034,9 @@ vec3 grooveNormalCalc(vec2 pq) {
     this.scene.add(g);
     this._buildPartLabels();
 
-    // --- 理想追従ゴースト: 信号どおり完全にトレースした場合の針位置 ---
-    // 実針とのズレ = 追従誤差 (トレーシングロス・共振・粗さ起因ジッタ・埃)
-    // 専用シーンで最後に重ね描き (深度クリア) するためZちらつきなし
+    // --- Ideal-tracking ghost: stylus position if it perfectly traced the signal ---
+    // Offset from real stylus = tracking error (tracing loss, resonance, roughness-induced jitter, dust)
+    // Overlaid last in a dedicated scene (with depth clear) to eliminate Z-fighting
     if (this.ghostGroup) {
       this.ghostScene.remove(this.ghostGroup);
       this.ghostGroup.traverse(o => {
@@ -1379,7 +1382,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     mat.customProgramCacheKey = () => `stylus-groove-clip-${texN}`;
   }
 
-  // ---------------- 毎フレーム更新 ----------------
+  // ---------------- Per-frame update ----------------
   // state: {sim, groove, params}
   update(state) {
     const { sim, groove } = state;
@@ -1390,8 +1393,9 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     this.viewHalf = viewHalf;
     const sS = sim.s; // 針のパターン座標 [m]
 
-    // カメラ焦点: 広視野=DC針先 → 高倍率=現在のR壁接触点へ、ズーム倍率で連続補間する。
-    // 接触点は既存の接触マーカーと同じ定義で、時間方向の平滑化はかけない。
+    // Camera focus: wide view = DC tip → high magnification = current R-wall contact point,
+    // continuously interpolated by zoom level.
+    // Contact point is defined same as existing contact markers, without temporal smoothing.
     const tx = sim.x * M2W, ty = sim.y * M2W;
     const dc = dcContactUm(p);
     const dcRestY = Math.SQRT2 * dc.t;
@@ -1400,7 +1404,8 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     wallFocus = Math.max(0, Math.min(1, wallFocus));
     const dcWallX = dc.t * Math.SQRT1_2 - N_R.x * dc.indent;
     const dcWallY = dc.t * Math.SQRT1_2 - N_R.y * dc.indent;
-    // 目盛り系の共通基準は常にR壁DC接触点。低倍率でwallFocusを掛けると反対側へ寄る。
+    // Common reference for rulers is always the R-wall DC contact point.
+    // At low magnification, applying wallFocus shifts it toward the opposite side.
     const rulerBaseTarget = {
       x: dcWallX,
       y: dcWallY,
@@ -1447,33 +1452,33 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     this.camera.far = dist * 60 + 4000;
     this.camera.updateProjectionMatrix();
 
-    // ヘッドランプ: ズームするほど強く点灯し影側の壁面も視認可能にする
+    // Headlamp: brightens as you zoom in to make shadowed wall surfaces visible
     this.headLamp.position.copy(this.camera.position);
     const lampFade = Math.max(0, Math.min(1, (40 - viewHalf) / 32));
     this.headLamp.intensity = 1.6 * dist * dist * lampFade;
     this._updateRecordDisk(viewHalf, sim);
 
-    // 生成保証 (可視範囲 + 隣接溝オフセット)
+    // Ensure generation (visible range + adjacent groove offsets)
     const viewExtentHalf = this.viewExtentHalf;
     const zSpanM = Math.min(1.5e-3, Math.max(2e-6, viewExtentHalf * 2.6e-6));
     groove.ensure(sS + zSpanM + 3.2e-3);
 
-    // --- 溝メッシュ更新 (GPU変位: テクスチャ範囲を視野+焦点に自動適応) ---
+    // --- Groove mesh update (GPU displacement: texture range auto-adapted to view + focus) ---
     const zHalfW = Math.min(viewExtentHalf * 2.6, 1500);
     const zMin = this.target.z - zHalfW, zMax = this.target.z + zHalfW;
     this._updateContactDeformation(sim);
     this._updateGrooveTex(this.mainGroove, groove, sS, zMin, zMax);
     for (const gm of this.neighborGrooves) {
-      // 同じ信号リングの別区間 = 隣の回転の音楽 (0.5mmオフセット)
+      // Different section of the same signal ring = music from the adjacent rotation (0.5mm offset)
       const vis = viewExtentHalf > 25;
       gm.mesh.visible = vis;
       if (vis) this._updateGrooveTex(gm, groove, sS + gm.sOffset, zMin, zMax);
     }
 
-    // --- 針 ---
+    // --- Stylus ---
     this.stylusGroup.position.set(tx, ty, 0);
 
-    // --- 理想追従ゴースト (信号のみの剛体V並進, 粗さ/埃/動特性を除く) ---
+    // --- Ideal-tracking ghost (rigid V-translation of signal only, excluding roughness/dust/dynamics) ---
     this.ghostGroup.visible = !!p.showGhost;
     if (p.showGhost) {
       const shL = groove.signalShift(0, sS);
@@ -1487,7 +1492,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
       this.errorVectorState = null;
     }
 
-    // --- 接触マーカー ---
+    // --- Contact markers ---
     const mScale = Math.max(viewHalf * 0.014, 0.002);
     const showMarkers = !!p.showContactMarkers && p.zoom > 3;
     const setMark = (mark, contact, nx, ny, zc) => {
@@ -1502,7 +1507,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     setMark(this.markL, sim.diag.dL > 0, Math.SQRT1_2, Math.SQRT1_2, sim.zcL);
     setMark(this.markR, sim.diag.dR > 0, -Math.SQRT1_2, Math.SQRT1_2, sim.zcR);
 
-    // --- 分子スケール / 目盛り / 埃 ---
+    // --- Molecular scale / Rulers / Dust ---
     this._updatePartLabels(viewHalf);
     this._updateMolecules(viewHalf, wallReferenceOffset);
     this._updateRulers(groove, viewHalf, focusS, wallReferenceOffset);
@@ -1691,15 +1696,16 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     }
   }
 
-  // ビット目盛り: 壁法線(変調方向)に沿った量子化目盛り + 現在値マーカー。
-  // 配置の原則 —
-  //  ・ローカルアンカー = DC静的着座で想定される接触点。LRとも物理のreseat()と同じ
-  //    めり込みd0を壁面法線方向に含める
-  //  ・断面上のruler中心は低倍率ではDC接触点に固定し、高倍率では現在接触点へ寄せる
-  //  ・目盛り格子は基準面を0とする絶対格子 (移動量がそのまま読める)。
-  //    描画は視野窓 [0±1.25視野] ∩ [±フルスケール] を格子から切り出す —
-  //    DC面が常に目盛りの中心になり、現在値マーカーだけが壁変位を追う
-  //  ・目盛りマークは画面上で軸と直交する向き (法線×視線) — どの方位からも読める
+  // Bit ruler: quantization scale along the wall normal (modulation axis) + current value marker.
+  // Placement principles —
+  //  - Local anchor = contact point assumed during DC static seating. For both L/R, 
+  //    includes the same indentation d0 as physics.reseat() along the wall normal.
+  //  - Ruler center on cross-section: fixed to DC contact point at low magnification,
+  //    shifts toward current contact point at high magnification.
+  //  - Scale grid is an absolute grid with the reference plane as 0 (displacement is directly readable).
+  //    Rendering clips the grid to the view window [0±1.25 view] ∩ [±full scale] —
+  //    the DC plane is always the center of the scale, and only the current value marker follows wall displacement.
+  //  - Scale marks are oriented perpendicular to the axis on screen (normal × view direction) — readable from any angle.
   _updateRulers(groove, viewHalf, focusS, rulerOffset = null) {
     const p = this.p;
     const camDir = this._rulerDir.subVectors(this.camera.position, this.target).normalize();
@@ -1815,7 +1821,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
       }
     }
 
-    // 右下の共通凡例: 実際に描画される細線/太線間隔をbit・SNへ換算して示す。
+    // Common legend at bottom-right: shows the actually rendered thin/thick line intervals converted to bits/SNR.
     if (visibleTickRulers === 0) {
       if (this.rulerLegend) this.rulerLegend.visible = false;
       return;
@@ -1842,8 +1848,8 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     }
   }
 
-  // 時間目盛り: 進行方向(z)に沿った時間スケール。0=針位置, +:再生済み側。
-  // ズームに応じて 1-2-5系列で主目盛り間隔を自動選択
+  // Time ruler: time scale along the travel axis (z). 0=stylus position, +: played side.
+  // Automatically selects main tick intervals using the 1-2-5 series based on zoom.
   _buildTimeRuler() {
     const mkLine = (opacity) => {
       const geo = new THREE.BufferGeometry();
@@ -1895,8 +1901,8 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     const ax = baseX + offX;
     const ay = Math.min(LAND_Y + viewHalf * 0.08, baseY + viewHalf * 0.45) + offY;
     const az = baseZ + offZ;
-    // 目盛りマークの向き: x-y平面内で画面上基線(z軸)と直交する方向 (ẑ×視線)。
-    // 固定のy方向だと正面視で基線と平行に重なり読めない
+    // Tick mark orientation: perpendicular to the screen baseline (z-axis) in the x-y plane (ẑ × view direction).
+    // A fixed y-direction would overlap with the baseline when viewed from the front, making it unreadable.
     let ux = this.target.y - this.camera.position.y;
     let uy = this.camera.position.x - this.target.x;
     const ul = Math.hypot(ux, uy) || 1;
@@ -1925,7 +1931,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     }
     this._finishLines(tr.major, mo);
     this._finishLines(tr.minor, no);
-    // ラベル: 凡例ではなく、主目盛りごとに針位置(0)からの相対時刻/距離を描く。
+    // Labels: not a legend, but relative time/distance from the stylus position (0) for each main tick.
     const wanted = [];
     const nCenter = 0;
     for (let n = nMin; n <= nMax; n++) {
@@ -2015,9 +2021,10 @@ float clipGrooveProfile(float x, float z, vec4 w) {
       .addScaledVector(up, y);
   }
 
-  // 埃粒子: 溝メッシュは埃で変形しない (wallShiftVisualは埃を含まない) ため、
-  // この粒子メッシュが針の感じるバンプの唯一の視覚表現。
-  // amp(出現時の成長 0→1) と塑性圧痕からの潰れ度 c(0→1) で形状・色を連続変化
+  // Dust particles: since the groove mesh is not deformed by dust (wallShiftVisual excludes dust),
+  // these particle meshes are the only visual representation of the bumps felt by the stylus.
+  // Shape and color change continuously based on amp (growth 0→1 upon appearance) 
+  // and crush fraction c (0→1 from plastic indentation).
   _updateDust(groove, sS) {
     const seen = new Set();
     const EPS = 1e-3;
