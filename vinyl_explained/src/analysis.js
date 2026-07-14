@@ -107,7 +107,7 @@ export function goertzelRms(x, fs, f) {
 
 // ---------------- Measurement Runner ----------------
 export class Measurement {
-  // overrides: paramsへの上書き (例: {signalType:'silence'})
+  // overrides: Overwrites to params (e.g., {signalType:'silence'})
   constructor(params, overrides = {}, duration = 0.4, seed = 20260705) {
     this.params = Object.assign({}, params, overrides);
     this.duration = duration;
@@ -228,9 +228,9 @@ export async function calibrateSigma(params, targetDb = 70, progressCb = null, d
 const CH = {
   surface: '#1a1a19', grid: '#2c2c2a', axis: '#383835',
   muted: '#898781', ink: '#ffffff', ink2: '#c3c2b7',
-  s1: '#3987e5',  // 系列1: 入力 (青)
-  s2: '#199e70',  // 系列2: 出力 (アクア)
-  s3: '#c98500',  // 系列3: ノイズ等 (黄)
+  s1: '#3987e5',  // Series 1: Input (blue)
+  s2: '#199e70',  // Series 2: Output (aqua)
+  s3: '#c98500',  // Series 3: Noise etc. (yellow)
   crit: '#d03b3b',
 };
 const FONT = '11px system-ui, -apple-system, "Segoe UI", sans-serif';

@@ -1,5 +1,5 @@
 // ============================================================================
-// main.js — アプリ結線: UI ⇔ 物理 ⇔ 3D描画 ⇔ 測定
+// main.js — App wiring: UI ⇔ Physics ⇔ 3D rendering ⇔ Measurement
 // ============================================================================
 import { defaultParams, CONST, ZOOM_MIN, ZOOM_MAX, SLOWDOWN_MIN, SLOWDOWN_MAX, grooveSpeed, sigmaToBits, snrToBits } from './params.js?v=20260706-sigma13-cache';
 import { GrooveModel } from './groove.js?v=20260706-sigma13-cache';
@@ -18,7 +18,7 @@ const params = defaultParams();
 params.lang = resolveLanguage();
 const SEED = 20260705;
 
-// URLハッシュでパラメータ上書き (共有/テスト用): #zoom=30000&showRulerL=1&measure=1
+// Override parameters via URL hash (for sharing/testing): #zoom=30000&showRulerL=1&measure=1
 const hashOpts = {};
 for (const kv of location.hash.replace(/^#/, '').split('&')) {
   const [k, v] = kv.split('=');
@@ -43,7 +43,7 @@ const ui = () => textFor(params.lang);
 const locale = () => params.lang === 'ja' ? 'ja-JP' : 'en-US';
 
 let groove, sim, renderer;
-let lastSnr = null; // 最後に測定したSNR
+let lastSnr = null; // Last measured SNR
 const counters = { skipSeen: 0, misSeen: 0, staticSeen: 0, dustSeen: 0 };
 // Event rates (denominator is record time, display smoothing is wall-clock time τ=60s)
 const rates = { mis: 0, skip: 0, stat: 0, dust: 0 };
@@ -100,7 +100,7 @@ function rebuild(kind = 'all') {
 }
 
 // ---------------------------------------------------------------------------
-// UIバインディング
+// UI bindings
 // ---------------------------------------------------------------------------
 const fmtHz = v => v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + ' kHz' : v + ' Hz';
 const fmtLen = um => {
@@ -179,7 +179,7 @@ function syncRulerAutoControl() {
 $('language').value = params.lang;
 $('language').addEventListener('change', () => setAppLanguage($('language').value, true));
 
-// チェックボックス / セレクト
+// Checkboxes / Selects
 for (const id of ['showRulerL', 'showRulerR', 'showMolecules', 'showContactMarkers', 'showLabels', 'rulerAuto', 'showGhost', 'showTimeScale']) {
   $(id).checked = !!params[id];
   $(id).addEventListener('change', () => {
@@ -238,7 +238,7 @@ function updateBitNote() {
 }
 
 // ---------------------------------------------------------------------------
-// 測定
+// Measurement
 // ---------------------------------------------------------------------------
 let measuring = false;
 const progressEl = $('progress').firstElementChild;
@@ -383,7 +383,7 @@ async function runMeasurement() {
   $('measureBtn').disabled = true; $('calibBtn').disabled = true;
   const dur = parseFloat($('measDur').value);
   try {
-    // 1) 現在の信号で周波数特性
+    // 1) Frequency response with current signal
     setMeasureNote('response');
     const m1 = new Measurement(params, {}, dur, SEED + 1);
     const res1 = await m1.run(f => { progressEl.style.width = (f * 50) + '%'; });
@@ -395,7 +395,7 @@ async function runMeasurement() {
       { f: smOut.f, v: smOut.v, color: CH.s2, labelId: 'output' },
     ], { yLabel: ui().charts.yLabel }, 'freq');
 
-    // 2) 無音溝でノイズ/SN
+    // 2) Noise/SNR in silent groove
     setMeasureNote('noise');
     const m2 = new Measurement(params, { signalType: 'silence' }, dur, SEED + 2);
     const res2 = await m2.run(f => { progressEl.style.width = (50 + f * 50) + '%'; });
@@ -452,7 +452,7 @@ $('calibBtn').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// メインループ
+// Main loop
 // ---------------------------------------------------------------------------
 rebuild('all');
 renderer = new Renderer3D($('view'), params);
@@ -513,7 +513,7 @@ function frame(now) {
   }
   const renderSim = interpolatedSimView(stepAccum);
 
-  // イベント検出 (差分をレート推定に蓄積)
+  // Event detection (accumulate differences for rate estimation)
   if (sim.staticFlash) { sim.staticFlash = 0; doFlash('static'); }
   pending.stat += Math.max(0, sim.staticCount - counters.staticSeen);
   counters.staticSeen = sim.staticCount;
@@ -525,7 +525,7 @@ function frame(now) {
   pending.dust += Math.max(0, groove.dustHits - counters.dustSeen);
   counters.dustSeen = groove.dustHits;
 
-  // 測定中は3D描画を止めて演算を測定に集中させる
+  // Stop 3D rendering during measurement to focus computation on measurement
   if (measuring) return;
   renderer.update({ sim: renderSim, groove, params });
 
@@ -542,7 +542,7 @@ function frame(now) {
     const eT = renderer.errorVectorState ? fmtSignedJitter(renderer.errorVectorState.tSec) : '—';
     errText = `\n${tx.hud.trackingErrorLR}: <b>${eL.toFixed(1)} / ${eR.toFixed(1)}</b> nm\n${tx.hud.trackingErrorTime}: <b>${eT}</b>`;
   }
-  // 追従S/E・ジッタ + イベントレート (指数減衰, 表示は~1秒ごと更新)
+  // Tracking S/E, jitter + event rates (exponential decay, display updates ~every 1s)
   if (now - statsLastT > 1000) {
     const dtWallStats = Math.min((now - statsLastT) / 1000, 10);
     statsLastT = now;
@@ -586,7 +586,7 @@ function frame(now) {
   }
 
   // Scale bar
-  const vw = renderer.viewWidth || renderer.viewHalf * 2; // 水平視野幅 [µm]
+  const vw = renderer.viewWidth || renderer.viewHalf * 2; // Horizontal field of view width [µm]
   const targetUm = vw * 0.25;
   const pow = 10 ** Math.floor(Math.log10(targetUm));
   const nice = [1, 2, 5, 10].map(m => m * pow).reduce((a, b) =>
@@ -602,7 +602,7 @@ renderMeasureNote();
 refreshCharts();
 $('sineRow').style.display = params.signalType === 'sine' ? '' : 'none';
 $('rScanRow').style.display = params.stylusShape === 'spherical' ? 'none' : '';
-// ハッシュ指定をUIへ反映
+// Reflect hash options to UI
 for (const r of ranges) syncRange(r.id);
 for (const id of ['showRulerL', 'showRulerR', 'showMolecules', 'showContactMarkers', 'showLabels', 'rulerAuto', 'showGhost', 'showTimeScale']) $(id).checked = !!params[id];
 syncRulerAutoControl();

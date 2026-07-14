@@ -31,8 +31,8 @@ const ROUGH_LEN = 1 << 18;  // Roughness ring length (262144 × 50nm ≈ 13mm)
 // → This provides a physically correct separation between "visual roughness" and "felt roughness".
 //    This explains why ideal pressings can reach ~70dB SNR despite molecular-scale irregularities.
 const CORR_FINE = 0.15e-6, CORR_MID = 2e-6, CORR_WAV = 30e-6;
-const FRAC_FINE = 0.60, FRAC_MID = 0.30, FRAC_WAV = 0.10; // 分散比率
-const PATCH_T = 2.5e-6; // 横方向パッチ半幅 [m]
+const FRAC_FINE = 0.60, FRAC_MID = 0.30, FRAC_WAV = 0.10; // Variance ratio
+const PATCH_T = 2.5e-6; // Lateral patch half-width [m]
 
 // --- Real-world Dust Modeling ---
 // Deposition: Particles fall uniformly onto the record surface, and their fate depends on the landing site:
@@ -55,7 +55,7 @@ const DUST_KIND = {
   fiber: { yld: 0.2e-6, res: 0.10 },
   grit: { yld: 3.0e-6, res: 0.85 },
 };
-const TOP_N = 49;            // 圧痕包絡線のサンプル数 (足跡 ±4w を等分)
+const TOP_N = 49;            // Number of samples for indentation envelope (divides footprint ±4w)
 const KAPPA_FINE = Math.sqrt(CORR_FINE / (CORR_FINE + PATCH_T));
 const KAPPA_MID = Math.sqrt(CORR_MID / (CORR_MID + PATCH_T));
 const KAPPA_WAV = Math.sqrt(CORR_WAV / (CORR_WAV + PATCH_T));
@@ -108,8 +108,8 @@ export class GrooveModel {
       this.sigN++;
       const i = this.sigN & (SIG_LEN - 1);
       const { dL, dR, vL, vR } = this.gen.next();
-      this.sigShiftL[i] = dL;       // 左壁法線変位 = +dL
-      this.sigShiftR[i] = -dR;      // 右壁法線変位 = −dR (45/45幾何)
+      this.sigShiftL[i] = dL;       // Left wall normal displacement = +dL
+      this.sigShiftR[i] = -dR;      // Right wall normal displacement = −dR (45/45 geometry)
       this.refVelL[i] = vL;
       this.refVelR[i] = vR;
     }
@@ -419,5 +419,5 @@ export class GrooveModel {
 // Wall normal and tangent vectors (within cross-section)
 export const N_L = { x: Math.SQRT1_2, y: Math.SQRT1_2 };
 export const N_R = { x: -Math.SQRT1_2, y: Math.SQRT1_2 };
-export const U_L = { x: Math.SQRT1_2, y: Math.SQRT1_2 };   // Lチャンネル変調方向
-export const U_R = { x: Math.SQRT1_2, y: -Math.SQRT1_2 };  // Rチャンネル変調方向
+export const U_L = { x: Math.SQRT1_2, y: Math.SQRT1_2 };   // L channel modulation direction
+export const U_R = { x: Math.SQRT1_2, y: -Math.SQRT1_2 };  // R channel modulation direction

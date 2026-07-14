@@ -1,16 +1,16 @@
 // ============================================================================
-// dsp.js — 信号生成・フィルタ (レコード時間軸 fs=192kHz で動作)
+// dsp.js — Signal generation and filtering (operates on record time axis fs=192kHz)
 //
-// 信号チェーン (カッティング・レース模擬):
-//   音源(ピンクノイズ M/S) → 20Hzランブルフィルタ + 音楽相当LF整形(80Hz HPF)
-//   → Side高域通過(低域モノ化) → M/S→L/R
-//   → マスタリングHFカット(Butterworth LPF) → レベル(基準5cm/s)
-//   → RIAA録音プリエンファシス(速度領域) → 漏れ積分(速度→変位)
-//   → ソフトリミッタ(オーバーカット防止) → 45/45壁面変位
+// Signal chain (cutting/race simulation):
+//   Source (pink noise M/S) → 20Hz rumble filter + music-like LF shaping (80Hz HPF)
+//   → Side high-pass (bass mono) → M/S→L/R
+//   → Mastering HF cutoff (Butterworth LPF) → Level (reference 5cm/s)
+//   → RIAA recording pre-emphasis (velocity domain) → Leaky integration (velocity→displacement)
+//   → Soft limiter (overcut prevention) → 45/45 wall displacement
 // ============================================================================
 import { CONST } from './params.js?v=20260706-sigma13-cache';
 
-// --- 再現可能な乱数 (mulberry32) ---
+// --- Reproducible random number (mulberry32) ---
 export function makeRng(seed) {
   let a = seed >>> 0;
   return function () {
@@ -21,7 +21,7 @@ export function makeRng(seed) {
   };
 }
 
-// 正規乱数 (Box-Muller)
+// Normal random number (Box-Muller)
 export function makeGauss(rng) {
   let spare = null;
   return function () {
@@ -34,12 +34,12 @@ export function makeGauss(rng) {
   };
 }
 
-// --- ピンクノイズ (Paul Kellet 経済版, -3dB/oct 10Hz–20kHz) ---
-// 白色正規入力に対し出力RMS ≈ PINK_RMS (calibrate.mjsで実測した正規化定数)
-export const PINK_RMS = 3.0548; // 実測値: gauss入力時の出力RMS (calibrate.mjs [1])
-// ピンクノイズがマスタリングチェーン(20Hz HPF/80Hz LF整形/モノ化/HFカット16k/RIAA)
-// を通過した後のカッター速度ピーク実測値 [m/s] (単位RMS信号・amp=V_REF時, calibrate.mjs [1b])
-export const PINK_PEAK_VEL = 0.40707; // 実測 (5秒間の最大|v|, seed固定)
+// --- Pink noise (Paul Kellet economical version, -3dB/oct 10Hz–20kHz) ---
+// For white Gaussian input, output RMS ≈ PINK_RMS (normalization constant measured in calibrate.mjs)
+export const PINK_RMS = 3.0548; // Measured value: output RMS for Gaussian input (calibrate.mjs [1])
+// Measured peak cutter velocity [m/s] after pink noise passes through the mastering chain
+// (20Hz HPF/80Hz LF shaping/mono/HF cutoff 16k/RIAA) (for unit RMS signal & amp=V_REF, calibrate.mjs [1b])
+export const PINK_PEAK_VEL = 0.40707; // Measured (max |v| over 5 seconds, fixed seed)
 export function makePink(gauss) {
   let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
   return function () {
@@ -52,11 +52,11 @@ export function makePink(gauss) {
     b5 = -0.7616 * b5 - w * 0.0168980;
     const out = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362;
     b6 = w * 0.115926;
-    return out / PINK_RMS; // 単位RMSに正規化
+    return out / PINK_RMS; // Normalize to unit RMS
   };
 }
 
-// --- 1次セクション (アナログ (1+sTz)/(1+sTp) の双一次変換) ---
+// --- 1st-order section (bilinear transform of analog (1+sTz)/(1+sTp)) ---
 export class FirstOrder {
   constructor(Tz, Tp, fs) {
     const K = 2 * fs;
@@ -71,14 +71,14 @@ export class FirstOrder {
     this.x1 = x; this.y1 = y;
     return y;
   }
-  // アナログ振幅応答 (正規化用)
+  // Analog amplitude response (for normalization)
   static analogMag(Tz, Tp, f) {
     const w = 2 * Math.PI * f;
     return Math.sqrt((1 + (w * Tz) ** 2) / (1 + (w * Tp) ** 2));
   }
 }
 
-// --- RIAA録音プリエンファシス (速度領域, 1kHzで0dB正規化) ---
+// --- RIAA recording pre-emphasis (velocity domain, normalized to 0dB at 1kHz) ---
 // H(s) = (1+sT1)(1+sT3) / ((1+sT2)(1+sT4))
 export class RiaaPreEmphasis {
   constructor(fs) {
@@ -90,7 +90,7 @@ export class RiaaPreEmphasis {
   process(x) { return this.s2.process(this.s1.process(x)) * this.gain; }
 }
 
-// --- RIAA再生ディエンファシス (逆特性, 測定系で使用) ---
+// --- RIAA playback de-emphasis (inverse characteristic, used in measurement system) ---
 export class RiaaDeEmphasis {
   constructor(fs) {
     const { RIAA_T1: T1, RIAA_T2: T2, RIAA_T3: T3, RIAA_T4: T4 } = CONST;
@@ -139,7 +139,7 @@ export function butter2HP(fc, fs) {
   return (x) => s.process(x);
 }
 
-// --- 漏れ積分 (速度→変位, DC逃がし ~5Hz: カッティングのローエンド限界相当) ---
+// --- Leaky integrator (velocity→displacement, DC leak ~5Hz: equivalent to cutting low-end limit) ---
 export class LeakyIntegrator {
   constructor(fs, fLeak = 5) {
     this.a = Math.exp(-2 * Math.PI * fLeak / fs);
@@ -150,8 +150,8 @@ export class LeakyIntegrator {
 }
 
 // ============================================================================
-// SignalGenerator — 1サンプルずつ (L変位, R変位, L速度, R速度) を生成
-// 変位[m]は45/45各壁の法線方向変位に対応するチャンネル変位
+// SignalGenerator — Generates (L displacement, R displacement, L velocity, R velocity) per sample
+// Displacement [m] corresponds to channel displacement along 45/45 wall normal direction
 // ============================================================================
 export class SignalGenerator {
   constructor(params, seed = 12345) {
@@ -164,13 +164,13 @@ export class SignalGenerator {
     this.pinkM = makePink(g1);
     this.pinkS = makePink(g2);
     this.sideHP = butter2HP(params.monoBelow, fs);
-    // ランブルフィルタ (20Hz, -12dB/oct): 実機カッティング系の必須HPF。
-    // RIAA録音特性は50Hz以下で定速度 → 変位∝f^-1.5 で低域ほど増大するため、
-    // これが無いとピンクノイズの<20Hz成分が変位を支配しリミッタに張り付く
+    // Rumble filter (20Hz, -12dB/oct): essential HPF in real cutting systems.
+    // RIAA recording characteristic is constant velocity below 50Hz → displacement ∝ f^-1.5, increasing towards low frequencies.
+    // Without this, the <20Hz components of pink noise would dominate displacement and stick to the limiter.
     this.rumbleHP = butter2HP(20, fs);
-    // 音楽相当LF整形 (80Hz, -12dB/oct): マスタリング済み音楽の長期平均スペクトルは
-    // ~80Hz以下で減衰する (楽器の基音下限 + マスタリングHPF)。生ピンクは音楽より
-    // 低域が過大で、20Hzカットだけでは20〜60Hzの変位がリミッタに残留張り付きする
+    // Music-like LF shaping (80Hz, -12dB/oct): the long-term average spectrum of mastered music
+    // decays below ~80Hz (instrument fundamental limits + mastering HPF). Raw pink noise has excessive
+    // low frequencies compared to music, and with only a 20Hz cut, displacement at 20-60Hz would remain stuck to the limiter.
     this.musicLF = butter2HP(80, fs);
     this.hfL = butter4LP(params.hfCutoff, fs);
     this.hfR = butter4LP(params.hfCutoff, fs);
@@ -180,17 +180,17 @@ export class SignalGenerator {
     this.intR = new LeakyIntegrator(fs);
     this.phase = 0;
     this.n = 0;
-    // ソフトリミッタしきい値 (壁面変位): オーバーカット防止
+    // Soft limiter threshold (wall displacement): overcut prevention
     this.dispLimit = CONST.CUT_DISP_LIMIT;
   }
 
   // → {dL, dR, vL, vR}  d:変位[m] v:カッター速度[m/s](RIAA後)
   next() {
     const p = this.p;
-    // レベルはピーク基準 (アナログマスタリング相当):
-    //   0dB = 45/45壁方向ピーク 5cm/s (モノ横RMS 5cm/s基準に一致)
-    //   ピンクノイズはチェーン通過後の実測ピーク PINK_PEAK_VEL で正規化。
-    //   LPアルバムの音楽ピークは基準+10〜+12dB程度が典型 → 既定レベル +12dB
+    // Level is peak-based (analog mastering equivalent):
+    //   0dB = 45/45 wall direction peak 5cm/s (matches mono lateral RMS 5cm/s reference)
+    //   Pink noise is normalized by measured peak PINK_PEAK_VEL after passing through the chain.
+    //   Music peaks on LP albums are typically +10 to +12dB above reference → default level +12dB
     const lvl = Math.pow(10, p.levelDb / 20);
     const amp = p.signalType === 'pink'
       ? lvl * CONST.V_REF * (CONST.V_REF / PINK_PEAK_VEL)
@@ -200,27 +200,27 @@ export class SignalGenerator {
       mRaw = this.musicLF(this.rumbleHP(this.pinkM()));
       sRaw = this.sideHP(this.pinkS()) * p.sideMix; // Sideは250Hz HPF済 (追加不要)
     } else if (p.signalType === 'sine') {
-      // 1kHz 0dB = モノ横5cm/s RMS相当の正弦波 (壁方向ピーク5cm/s)
+      // 1kHz 0dB = sine wave equivalent to mono lateral 5cm/s RMS (wall direction peak 5cm/s)
       mRaw = Math.SQRT2 * Math.sin(this.phase);
       this.phase += 2 * Math.PI * p.sineFreq / CONST.FS;
       if (this.phase > 2 * Math.PI) this.phase -= 2 * Math.PI;
       sRaw = 0;
     } // silence: 0のまま
 
-    // M/S → L/R (電気信号領域, 単位RMS基準)
+    // M/S → L/R (electrical signal domain, unit RMS reference)
     const SQ = Math.SQRT1_2;
     let L = (mRaw + sRaw) * SQ;
     let R = (mRaw - sRaw) * SQ;
 
-    // マスタリングHFカット
+    // Mastering HF cutoff
     L = this.hfL(L); R = this.hfR(R);
 
-    // レベル → カッター速度[m/s], RIAA録音イコライズ (速度領域)
+    // Level → cutter velocity [m/s], RIAA recording equalization (velocity domain)
     const vL = this.riaaL.process(L * amp);
     const vR = this.riaaR.process(R * amp);
 
-    // 速度→変位, ソフトリミット (オーバーカット防止。しきい値70%まで完全線形,
-    // それ以上は滑らかなニー — 低レベルで歪みを生まない)
+    // Velocity→displacement, soft limit (overcut prevention. Fully linear up to 70% threshold,
+    // smooth knee above that — produces no distortion at low levels)
     const dL = softClip(this.intL.process(vL), this.dispLimit);
     const dR = softClip(this.intR.process(vR), this.dispLimit);
     this.n++;
@@ -228,7 +228,7 @@ export class SignalGenerator {
   }
 }
 
-// C1連続ソフトクリップ: |x| ≤ 0.7·lim は恒等, 以降 tanh ニー
+// C1 continuous soft clip: |x| ≤ 0.7·lim is identity, then tanh knee
 export function softClip(x, lim) {
   const u = x / lim, au = Math.abs(u);
   if (au <= 0.7) return x;

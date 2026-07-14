@@ -23,23 +23,23 @@ import { CONST, hertzK, vtfNewton } from './params.js?v=20260706-sigma13-cache';
 import { makeRng } from './dsp.js?v=20260706-sigma13-cache';
 import { N_L, N_R, U_L, U_R } from './groove.js?v=20260706-sigma13-cache';
 
-const NSCAN = 25; // 走査窓のサンプル数 (窓±6.4µm → 間隔~0.53µm)
+const NSCAN = 25; // Number of samples in scan window (window ±6.4µm → interval ~0.53µm)
 
 export class StylusSim {
   constructor(params, groove, seed = 777) {
     this.p = params;
     this.groove = groove;
     this.dt = CONST.PHYS_DT;
-    this.grooveVel = groove.dzSig * CONST.FS; // 溝線速度 [m/s]
-    this.kH = hertzK(params); // 静的着座の計算用 (Winklerと静特性一致)
-    // Winkler基礎の線剛性 [N/m²]: 球面でHertzと厳密一致するよう校正
+    this.grooveVel = groove.dzSig * CONST.FS; // Groove linear velocity [m/s]
+    this.kH = hertzK(params); // For static seating calculation (matches Winkler static characteristics)
+    // Linear stiffness of Winkler foundation [N/m²]: calibrated to strictly match Hertz for spherical surfaces
     const rEff = params.stylusShape === 'spherical'
       ? params.rSide : Math.sqrt(params.rSide * params.rScan);
     this.kF = (CONST.PVC_ESTAR / Math.SQRT2) * Math.sqrt(rEff / params.rScan);
     this.Ft = vtfNewton(params);
     this.kC = 1 / params.compliance;
     this.cC = 2 * params.dampZeta * Math.sqrt(this.kC * params.tipMass);
-    this.cArm = 0.5; // アーム微小粘性 (軸受+空気, 数値安定用) [N·s/m]
+    this.cArm = 0.5; // Arm micro-viscosity (bearing + air, for numerical stability) [N·s/m]
 
     // Scan window (sufficiently covers contact patch + signal-induced movement)
     this.scanHalf = 0.8 * params.rScan;
@@ -52,7 +52,7 @@ export class StylusSim {
     // Static electricity
     this.staticRng = makeRng(seed);
     this.pops = []; // {t0, amp}
-    this.staticFlash = 0; // 描画通知用 (メインが読んで消費)
+    this.staticFlash = 0; // For rendering notification (consumed by main)
     this.staticCount = 0;
     // Event rate scale: normally 1. Can be explicitly accelerated for verification.
     this.eventRateScale = 1;
@@ -69,7 +69,7 @@ export class StylusSim {
     this.skipCount = 0;
     this.contactLossT = 0;
     this.inLossEpisode = false;
-    this.skipHoldoff = 0; // 針飛び直後の再カウント抑止 [s] (1つの傷=1イベント)
+    this.skipHoldoff = 0; // Recount suppression after skip [s] (1 scratch = 1 event)
     this.diag = { FL: 0, FR: 0, dL: 0, dR: 0, pressL: 0, pressR: 0, fric: 0 };
 
     // Output (192kHz sample) callback: (vLp, vRp, s, t)
@@ -79,18 +79,18 @@ export class StylusSim {
     this.outAccumR = 0;
     this.outAccumN = 0;
 
-    this.s = 0;      // 溝パターン座標 [m]
-    this.t = 0;      // レコード時間 [s]
+    this.s = 0;      // Groove pattern coordinate [m]
+    this.t = 0;      // Record time [s]
     this.reseat();
-    this.dPrevL = 0; this.dPrevR = 0;     // 診断用 δ0
-    this.iPrevL = null; this.iPrevR = null; // Kelvin-Voigt用 ∫δ⁺
+    this.dPrevL = 0; this.dPrevR = 0;     // δ0 for diagnostics
+    this.iPrevL = null; this.iPrevR = null; // ∫δ⁺ for Kelvin-Voigt
   }
 
   // Seat the stylus in the groove at static equilibrium
   reseat() {
     const p = this.p;
-    const N = this.Ft / Math.SQRT2;              // 各壁の法線力
-    const d0 = Math.pow(N / this.kH, 2 / 3);     // 静的めり込み
+    const N = this.Ft / Math.SQRT2;              // Normal force per wall
+    const d0 = Math.pow(N / this.kH, 2 / 3);     // Static indentation
     this.x = 0;
     this.y = Math.SQRT2 * (p.rSide - d0);
     this.vx = 0; this.vy = 0;
@@ -135,7 +135,7 @@ export class StylusSim {
       if ((i & 63) === 0) g.ensure(this.s + this.scanHalf + g.spawnAhead * 2 + 4 * g.dzSig);
 
       // --- Contact force (Winkler elastic foundation) ---
-      const DL = this.x * N_L.x + this.y * N_L.y;  // 左壁面(無変調)までの距離
+      const DL = this.x * N_L.x + this.y * N_L.y;  // Distance to left wall surface (unmodulated)
       const DR = this.x * N_R.x + this.y * N_R.y;
       // Plastic crushing of dust: permanently deform dust where and how deep the stylus bottom actually presses
       if (g.activeDust.length) {
