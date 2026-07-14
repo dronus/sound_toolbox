@@ -18,17 +18,18 @@ import { SignalGenerator, makeRng, makeGauss } from './dsp.js?v=20260706-sigma13
 
 const SIG_LEN = 1 << 15;    // 信号リング長 (32768サンプル ≈ 数cm)
 const ROUGH_LEN = 1 << 18;  // 粗さリング長 (262144 × 50nm ≈ 13mm)
-// 多スケール粗さ (実測ビニル表面のフラクタル的性状を3成分で近似):
-//  fine: 相関長0.15µm — 分子塊/微結晶スケール
-//  mid : 相関長2µm   — スタンパー転写・成形起因。可聴帯域ノイズの主因
-//  wav : 相関長30µm  — うねり(カッティング/プレスの低周波誤差)。ランブル成分
+// Multi-scale roughness (approximating the fractal nature of measured vinyl surfaces with 3 components):
+//  fine: correlation length 0.15µm — molecular cluster/micro-crystal scale
+//  mid : correlation length 2µm   — caused by stamper transfer/molding. Main source of audible noise.
+//  wav : correlation length 30µm  — waviness (low-frequency errors in cutting/pressing). Rumble component.
 //
-// 接触パッチ (~5×7µm) は2次元に広がるため、針が「感じる」粗さは
-// パッチ横方向の平均化で短波長成分ほど減衰する。1D溝モデルでは進行方向の
-// 平均化しか自然に生じないため、横方向平均化を解析係数 κ=√(ℓ/(ℓ+a_t))
-// (a_t≈2.5µm: 横方向パッチ半幅) として felt リングに事前適用する。
-// → 「見える粗さ(visual)」と「針が感じる粗さ(felt)」の物理的に正しい分離。
-//    これが分子スケールの凹凸があっても理想プレス盤が~70dB級に達し得る理由。
+// Since the contact patch (~5×7µm) is 2D, the roughness "felt" by the stylus
+// is attenuated for shorter wavelengths due to lateral averaging across the patch.
+// In a 1D groove model, only longitudinal averaging occurs naturally.
+// Therefore, lateral averaging is pre-applied to the "felt" ring using an analytic coefficient
+// κ=√(ℓ/(ℓ+a_t)) (a_t≈2.5µm: lateral patch half-width).
+// → This provides a physically correct separation between "visual roughness" and "felt roughness".
+//    This explains why ideal pressings can reach ~70dB SNR despite molecular-scale irregularities.
 const CORR_FINE = 0.15e-6, CORR_MID = 2e-6, CORR_WAV = 30e-6;
 const FRAC_FINE = 0.60, FRAC_MID = 0.30, FRAC_WAV = 0.10; // 分散比率
 const PATCH_T = 2.5e-6; // 横方向パッチ半幅 [m]
