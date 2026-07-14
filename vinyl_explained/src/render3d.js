@@ -344,7 +344,7 @@ export class Renderer3D {
     for (const k of [-1, 1]) {
       const gm = this._makeGrooveShaderMesh(96, 512, 1024, 0.5e-3);
       gm.mesh.position.x = k * CONST.GROOVE_PITCH * M2W;
-      // 本溝側の隣は sBase−0.5mm (=本溝), 外側は擬似的に +0.5mm 先の区間
+      // Neighbor on the main groove side is sBase−0.5mm (=main groove), outer side is pseudo +0.5mm ahead
       gm.nbrOff = k === -1 ? [0.5e-3, -0.5e-3] : [-0.5e-3, 0.5e-3];
       this.scene.add(gm.mesh);
       this.neighborGrooves.push(gm);
@@ -707,7 +707,7 @@ float grooveProfile(float x, float z, vec4 w) {
   float yr = landCap(1.4142135624 * w.w - (x - ${PITCH_W.toFixed(3)}));
   return min(y, min(yl, yr));
 }
-// zはpq.yに対して降順にマップ (巻き順を上向き表面に保つ)
+// z is mapped in descending order relative to pq.y (to keep the winding order for an upward-facing surface)
 vec3 grooveVertex(vec2 pq) {
   float x = pq.x * 2.0 * uXHalf;
   float z = mix(uZMax, uZMin, pq.y + 0.5);
@@ -972,7 +972,7 @@ vec3 grooveNormalCalc(vec2 pq) {
     const shell = new THREE.Mesh(new THREE.BoxGeometry(13000, 2500, 52000), matShell);
     shell.position.set(0, shellTopY + 1250, 2000 - 26000); // z: +2mm〜−50mm
     g.add(shell);
-    // 取付ネジ頭 ×2
+    // Mounting screw heads x2
     const matSteel = new THREE.MeshStandardMaterial({ color: 0xb0b3b8, roughness: 0.35, metalness: 0.9 });
     for (const zScrew of [-6000, -18000]) {
       const screw = new THREE.Mesh(new THREE.CylinderGeometry(1400, 1400, 900, 16), matSteel);
@@ -1625,8 +1625,8 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     };
   }
 
-  // 分子スケール: R壁目盛りの基準点近くにPVC鎖の実寸スケール参照を示す。
-  // 10万倍以上では「分子球」を実体として塗らず、1.1nm程度の参照円だけを残す。
+  // Molecular scale: shows a real-size PVC chain reference near the R-wall ruler anchor.
+  // At 100k magnification and above, the "molecule sphere" is not rendered as a solid; only a reference circle of ~1.1nm remains.
   _updateMolecules(viewHalf, rulerOffset = null) {
     const show = !!this.p.showMolecules && viewHalf < MOLECULE_INDICATOR_VIEW_HALF;
     const showStructure = show && this.p.zoom >= MOLECULE_STRUCTURE_MIN_ZOOM;
@@ -1648,14 +1648,14 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     const baseX = bx + (rulerOffset?.x ?? 0);
     const baseY = by + (rulerOffset?.y ?? 0);
     const z = rulerOffset?.z ?? 0;
-    // 10万倍を超えると表示余白とラベルが画面を占有しすぎるため、その部分だけ
-    // 10万倍時点の見え方に固定する。分子球/原子球の寸法は固定しない。
+    // Above 100k magnification, the margins and labels would occupy too much of the screen,
+    // so that specific part is locked to the appearance at 100k. Molecule/atom sphere dimensions are not locked.
     const layoutViewHalf = Math.max(viewHalf, MOLECULE_LAYOUT_LOCK_VIEW_HALF);
     const layoutScale = Math.min(1, MOLECULE_LAYOUT_LOCK_ZOOM / Math.max(this.p.zoom, 1));
 
-    const right = this._moleculeRight.set(ny, -nx, 0).normalize(); // R壁面内の断面方向
+    const right = this._moleculeRight.set(ny, -nx, 0).normalize(); // Cross-section direction within R-wall surface
     if (!Number.isFinite(right.x)) right.set(SQ, SQ, 0);
-    const normal = this._moleculeAxisZ.set(nx, ny, 0).normalize(); // R壁法線 = R目盛り軸
+    const normal = this._moleculeAxisZ.set(nx, ny, 0).normalize(); // R-wall normal = R-ruler axis
     const alignToRRuler = !!this.p.showRulerR;
     const axisX = alignToRRuler
       ? this._moleculeAxisX.copy(normal)
@@ -1761,13 +1761,13 @@ float clipGrooveProfile(float x, float z, vec4 w) {
       const by = tC * SQ - ny * dcContact.indent + offY;
       const zR = offZ;
 
-      // 目盛りマークの向き: 法線×視線 (画面上で軸に直交)。視線≈法線時は壁接線
+      // Tick mark orientation: normal × view direction (perpendicular to axis on screen). Use wall tangent when view ≈ normal.
       let ux = ny * camDir.z, uy = -nx * camDir.z, uz = nx * camDir.y - ny * camDir.x;
       const ul = Math.hypot(ux, uy, uz);
       if (ul > 0.2) { ux /= ul; uy /= ul; uz /= ul; }
       else { ux = tx2; uy = ty2; uz = 0; }
 
-      // 描画区間 (基準面からの法線距離): 視野窓をフルスケールに制限して切り出す
+      // Rendering range (normal distance from reference plane): clip the view window to full scale
       const axisCenter = 0;
       const lo = Math.max(axisCenter - viewHalf * 1.25, -axisHalfLimit);
       const hi = Math.min(axisCenter + viewHalf * 1.25, axisHalfLimit);
@@ -1798,7 +1798,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
       this._finishLines(ruler.major, mo);
       this._finishLines(ruler.minor, no);
 
-      // 現在値マーカー (信号+粗さの変位の絶対位置, 焦点位置で評価)
+      // Current value marker (absolute position of signal + roughness displacement, evaluated at focus position)
       const mkPos = ruler.marker.geometry.attributes.position.array;
       let ko = 0;
       const mx = bx + nx * wNow, my = by + ny * wNow;
@@ -1882,7 +1882,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
     }
     const v = sim.grooveVel;
     const pxPerUm = this.pxPerUm || this.canvas.clientHeight / (2 * viewHalf);
-    // 主目盛り間隔: 画面上~150pxになる1-2-5系列 (時間モード/距離モード)
+    // Main tick interval: 1-2-5 series that results in ~150px on screen (time mode / distance mode)
     const lengthMode = p.timeScaleMode === 'length';
     const raw = lengthMode
       ? 150 / pxPerUm                  // [µm]
@@ -2038,15 +2038,15 @@ float clipGrooveProfile(float x, float z, vec4 w) {
       }
       const grow = Math.max(D.amp, EPS);
       if (D.wall === 2) {
-        // 傷: 実形状はwallShiftVisualで削れ+バリとして溝メッシュに入る。
-        // 補助メッシュは横断リップの視認性を少し足すだけにする。
+        // Scratch: actual shape is included in groove mesh as gouge + burr via wallShiftVisual.
+        // Auxiliary mesh only slightly improves visibility of transverse lips.
         const lip = Math.max(D.burr ?? D.h, 0.2e-6) * M2W * grow;
         m.position.set(0, 12 + lip * 0.18, (sS - D.s) * M2W);
         m.rotation.set(0, Math.atan2((D.skew ?? 0) * M2W * 2, 38), 0);
         m.scale.set(38, Math.max(lip, EPS), D.w * M2W * 2.4);
         m.material.color.set(GROOVE_COLOR);
       } else if (D.loc === 'land') {
-        // ランド上: 針経路の外, 寝そべったまま無傷で残る
+        // On land: outside stylus path, remains intact and lying flat
         const sign = D.wall === 0 ? -1 : 1;
         const hN = Math.max(0.35 * D.h * M2W * grow, EPS);
         const aZ = Math.max(D.w * M2W, 0.6 * D.h * M2W) * grow;
@@ -2055,7 +2055,7 @@ float clipGrooveProfile(float x, float z, vec4 w) {
         m.scale.set(Math.max(D.kind === 'fiber' ? hN * 1.4 : aZ * 0.8, EPS), hN, Math.max(aZ, EPS));
         m.material.color.copy(this.dustCol[D.kind]);
       } else if (D.loc === 'bottom') {
-        // 溝底: V字に静置 (中心高さ √2·h/2)。大粒のみ針底面に触れて潰れる
+        // At groove bottom: resting in V-shape (center height √2·h/2). Only large particles touch the stylus bottom and get crushed
         const c = groove.dustCrushFrac(D);
         const hV = Math.max(0.5 * D.h * M2W * grow * (1 - 0.85 * c), EPS);
         const aZ = Math.max(D.w * M2W, 0.6 * D.h * M2W) * grow * (1 + 0.4 * c);
@@ -2064,8 +2064,8 @@ float clipGrooveProfile(float x, float z, vec4 w) {
         m.scale.set(Math.max(aZ * 0.9, EPS), hV, Math.max(aZ, EPS));
         m.material.color.copy(this.dustCol[D.kind]).lerp(this.dustColCrushed, c);
       } else {
-        // 壁面付着: 実際の付着高さ t に配置。潰れ度 = 実塑性圧痕 × かすり度
-        // (縁を掠めた粒子は部分変形)。針が触れなかった粒子は無傷で通過される
+        // Wall adhesion: placed at actual adhesion height t. Crush degree = actual plastic indentation × graze factor
+        // (particles grazing the edge are partially deformed). Particles not touched by the stylus pass through intact
         const graze = D.h > 0 ? D.hFelt / D.h : 0;
         const c = groove.dustCrushFrac(D) * graze;
         const sign = D.wall === 0 ? -1 : 1;

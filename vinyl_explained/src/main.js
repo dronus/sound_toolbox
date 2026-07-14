@@ -45,13 +45,13 @@ const locale = () => params.lang === 'ja' ? 'ja-JP' : 'en-US';
 let groove, sim, renderer;
 let lastSnr = null; // 最後に測定したSNR
 const counters = { skipSeen: 0, misSeen: 0, staticSeen: 0, dustSeen: 0 };
-// イベントレート (分母はレコード時間、表示平滑は壁時計時間τ=60s)
+// Event rates (denominator is record time, display smoothing is wall-clock time τ=60s)
 const rates = { mis: 0, skip: 0, stat: 0, dust: 0 };
 const pending = { mis: 0, skip: 0, stat: 0, dust: 0 };
 let statsLastRecordT = 0;
 let stepAccum = 0, lastT = performance.now(), speedLimited = false;
 
-// 表示だけ物理ステップ間を補間する。物理計算・測定結果には影響させない。
+// Interpolate between physics steps for display only. Does not affect physical calculations or measurement results.
 const VIEW_KEYS = ['s', 't', 'x', 'y', 'vx', 'vy', 'restY', 'grooveVel', 'zcL', 'zcR'];
 const DIAG_KEYS = ['FL', 'FR', 'dL', 'dR', 'pressL', 'pressR', 'fric'];
 const displayPrev = { diag: {} };
@@ -87,7 +87,7 @@ function rebuild(kind = 'all') {
   if (grooveChanged) {
     groove = new GrooveModel(params, SEED);
   } else {
-    // 溝を維持したまま針が s=0 へ戻るため、旧針位置基準の埃は破棄
+    // Since the stylus returns to s=0 while maintaining the groove, dust relative to the old stylus position is discarded
     groove.dust.length = 0;
     groove.activeDust.length = 0;
   }
@@ -462,7 +462,7 @@ if (hashOpts.el) renderer.el = parseFloat(hashOpts.el);
 const hud = $('hud');
 const flash = $('flash');
 const eventlog = $('eventlog');
-// 追従S/E・ジッタの表示は1秒ごとに更新 (計算自体は物理側で指数減衰・常時)
+// Update Tracking S/E and jitter display every 1 second (calculations are performed continuously via exponential decay in physics)
 let statsLine = '', statsLastT = 0;
 function fmtJitter(s) {
   if (!isFinite(s) || s <= 0) return '—';
@@ -532,7 +532,7 @@ function frame(now) {
   const tx = ui();
   const d = renderSim.diag;
   const vTip = Math.hypot(renderSim.vx, renderSim.vy);
-  // 追従誤差: 実針位置 − 理想追従位置 (チャンネル方向に分解)
+  // Tracking error: real stylus position − ideal tracking position (decomposed into channel directions)
   let errText = '';
   if (params.showGhost && renderer.idealPos) {
     const dx = renderSim.x - renderer.idealPos.x, dy = renderSim.y - renderer.idealPos.y;
@@ -550,7 +550,7 @@ function frame(now) {
     const snTxt = vS > 1e-20 && vN > 0
       ? (10 * Math.log10(vS / vN)).toFixed(1) + ' dB' : '—';
     statsLine = `${tx.hud.trackingSE}: <b>${snTxt}</b>   ${tx.hud.jitter}: <b>${fmtJitter(Math.sqrt(Math.max(st.j.v, 0)))}</b>`;
-    // イベント数/レコード経過時間で物理レートを出し、HUDの応答性は壁時計時間で平滑化する。
+    // Calculate physical rate as events per record elapsed time, and smooth HUD responsiveness using wall-clock time.
     let dtRecord = sim.t - statsLastRecordT;
     if (!Number.isFinite(dtRecord) || dtRecord < 0) dtRecord = 0;
     statsLastRecordT = sim.t;
@@ -578,13 +578,13 @@ function frame(now) {
     statsLine +
     errText;
 
-  // 自動bit目盛りのUI追従
+  // UI synchronization for auto-bit ruler
   if (params.rulerAuto && renderer.autoBits && renderer.autoBits !== params.rulerBits) {
     params.rulerBits = renderer.autoBits;
     syncRange('rulerBits');
   }
 
-  // スケールバー
+  // Scale bar
   const vw = renderer.viewWidth || renderer.viewHalf * 2; // 水平視野幅 [µm]
   const targetUm = vw * 0.25;
   const pow = 10 ** Math.floor(Math.log10(targetUm));

@@ -54,7 +54,7 @@ export class StylusSim {
     this.pops = []; // {t0, amp}
     this.staticFlash = 0; // 描画通知用 (メインが読んで消費)
     this.staticCount = 0;
-    // イベント率スケール: 通常は1。検証用にだけ発生率を明示加速できる。
+    // Event rate scale: normally 1. Can be explicitly accelerated for verification.
     this.eventRateScale = 1;
 
     // Exponentially decaying statistics (τ=50ms record time, updated at 192kHz):
@@ -95,7 +95,7 @@ export class StylusSim {
     this.y = Math.SQRT2 * (p.rSide - d0);
     this.vx = 0; this.vy = 0;
     this.xa = 0;
-    this.ya = this.y - this.Ft / this.kC;        // ばね予圧 (たわみ ≈0.3mm)
+    this.ya = this.y - this.Ft / this.kC;        // Spring preload (deflection ≈0.3mm)
     this.vxa = 0; this.vya = 0;
     this.restY = this.y;
   }
@@ -113,7 +113,7 @@ export class StylusSim {
       let d = base + g.wallShift(wall, s + dz) - (dz * dz) / r2;
       if (d > delta0) delta0 = d;
       if (d > 0) {
-        if (d > 5e-6) d = 5e-6; // 深埋没クランプ (埃衝突時の数値安全)
+        if (d > 5e-6) d = 5e-6; // Deep burial clamp (numerical safety during dust collision)
         raw += d;
         zsum += d * dz;
       }

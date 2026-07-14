@@ -16,8 +16,8 @@
 import { CONST } from './params.js?v=20260706-sigma13-cache';
 import { SignalGenerator, makeRng, makeGauss } from './dsp.js?v=20260706-sigma13-cache';
 
-const SIG_LEN = 1 << 15;    // 信号リング長 (32768サンプル ≈ 数cm)
-const ROUGH_LEN = 1 << 18;  // 粗さリング長 (262144 × 50nm ≈ 13mm)
+const SIG_LEN = 1 << 15;    // Signal ring length (32768 samples ≈ few cm)
+const ROUGH_LEN = 1 << 18;  // Roughness ring length (262144 × 50nm ≈ 13mm)
 // Multi-scale roughness (approximating the fractal nature of measured vinyl surfaces with 3 components):
 //  fine: correlation length 0.15µm — molecular cluster/micro-crystal scale
 //  mid : correlation length 2µm   — caused by stamper transfer/molding. Main source of audible noise.
@@ -66,14 +66,14 @@ export class GrooveModel {
     this.gen = new SignalGenerator(params, seed);
     this.dzSig = (2 * Math.PI * (params.radiusMm * 1e-3) * (params.rpm / 60)) / CONST.FS;
 
-    // 信号リング
+    // Signal ring
     this.sigShiftL = new Float32Array(SIG_LEN);
     this.sigShiftR = new Float32Array(SIG_LEN);
-    this.refVelL = new Float32Array(SIG_LEN);  // 測定用: 入力カッター速度
+    this.refVelL = new Float32Array(SIG_LEN);  // For measurement: input cutter velocity
     this.refVelR = new Float32Array(SIG_LEN);
     this.sigN = -1; // 生成済み最終サンプル番号
 
-    // 粗さリング (壁ごとに独立): vis=見える粗さ, felt=針が感じる粗さ(κ適用)
+    // Roughness ring (independent per wall): vis=visible roughness, felt=roughness felt by stylus (κ applied)
     this.roughVisL = new Float32Array(ROUGH_LEN);
     this.roughVisR = new Float32Array(ROUGH_LEN);
     this.roughFeltL = new Float32Array(ROUGH_LEN);
@@ -84,7 +84,7 @@ export class GrooveModel {
     const aW = Math.exp(-CONST.ROUGH_DZ / CORR_WAV);
     this.aF = aF; this.aM = aM; this.aW = aW;
     const sigma = params.roughSigma;
-    // 各AR(1)の定常分散 g²/(1−a²) が指定比率になるよう解析的に正規化
+    // Analytically normalize so that the stationary variance g²/(1−a²) of each AR(1) matches the specified ratio
     this.gF = sigma * Math.sqrt(FRAC_FINE * (1 - aF * aF));
     this.gM = sigma * Math.sqrt(FRAC_MID * (1 - aM * aM));
     this.gW = sigma * Math.sqrt(FRAC_WAV * (1 - aW * aW));
@@ -92,12 +92,12 @@ export class GrooveModel {
     const rr = makeRng(seed ^ 0x51ab3d);
     this.gaussR = makeGauss(rr);
 
-    // 埃
-    this.dust = [];           // {s, wall(0=L,1=R,2=傷,3=溝底), loc, kind, h, w, hFelt, amp, top?, crushed}
+    // Dust
+    this.dust = [];           // {s, wall(0=L,1=R,2=scratch,3=groove bottom), loc, kind, h, w, hFelt, amp, top?, crushed}
     this.dustRng = makeRng(seed ^ 0xdeadbe);
     this.gaussD = makeGauss(this.dustRng); // 粒径の対数正規分布用
-    this.spawnAhead = 400e-6; // 針の400µm先に出現(接近が見える)
-    this.dustHits = 0;        // 針が踏んだ累積回数 (表示側でレート化)
+    this.spawnAhead = 400e-6; // Appear 400µm ahead of stylus (so approach is visible)
+    this.dustHits = 0;        // Cumulative count of particles hit by stylus (converted to rate in UI)
     this.activeDust = [];     // 針近傍の埃 (塑性圧縮の対象キャッシュ, advanceDustで更新)
   }
 
@@ -219,12 +219,12 @@ export class GrooveModel {
         const sk = s0 + k * ds;
         const u = (sk - D.s) / D.w;
         const g = D.hFelt * D.amp * Math.exp(-u * u);
-        const cur = D.top && D.top[k] < g ? D.top[k] : g; // 現在の有効高さ
+        const cur = D.top && D.top[k] < g ? D.top[k] : g; // Current effective height
         if (cur <= 0) continue;
         const dz = sk - sTip;
         const ballH = (dz * dz) / (2 * rScan) - base
           - this.signalShift(wall, sk) - this.roughShift(wall, sk, true);
-        // 接触判定は塑性変形と独立: 硬い粒 (grit) は潰れなくても「触れた」
+        // Contact detection is independent of plastic deformation: hard particles (grit) are "touched" even if not crushed
         if (cur > ballH) D.touched = true;
         const allowed = Math.max(ballH + D.yld, D.res * g);
         if (allowed < cur) {
@@ -281,9 +281,9 @@ export class GrooveModel {
         D.w = D.h * (0.7 + 1.6 * r());
       } else if (kr < 0.85) {
         D.kind = 'fiber';
-        D.h = (1 + 2 * r()) * 1e-6;              // 繊維径
-        const L = (10 + 30 * r()) * 1e-6;        // 繊維長
-        const phi = r() * Math.PI / 2;           // 溝方向に対する寝そべり角
+        D.h = (1 + 2 * r()) * 1e-6;              // Fiber diameter
+        const L = (10 + 30 * r()) * 1e-6;        // Fiber length
+        const phi = r() * Math.PI / 2;           // Lean angle relative to groove direction
         D.w = Math.max(D.h, 0.5 * L * Math.cos(phi));
         D.latHalf = Math.max(D.h, L * Math.sin(phi)) / 2;
       } else {
@@ -298,13 +298,13 @@ export class GrooveModel {
       if (pr < 0.4) {
         D.loc = 'land';
         D.wall = r() < 0.5 ? 0 : 1;
-        D.landX = (2 + 30 * r()) * 1e-6;         // 溝縁からの距離
+        D.landX = (2 + 30 * r()) * 1e-6;         // Distance from groove edge
         D.hFelt = 0;
       } else if (D.kind === 'fiber' || r() < Math.exp(-D.h / 4e-6)) {
         // Wall adhesion: effective height is attenuated by the lateral offset from the stylus contact line (t≈rSide) (edge grazing)
         D.loc = 'wall';
         D.wall = r() < 0.5 ? 0 : 1;
-        D.t = (3 + 39 * r()) * 1e-6;             // 壁上距離 (底フィレット上〜ランド縁)
+        D.t = (3 + 39 * r()) * 1e-6;             // Distance on wall (from bottom fillet to land edge)
         const lam = (D.latHalf ?? 0.5 * D.h) + PATCH_T;
         const dLat = (D.t - p.rSide) / lam;
         D.hFelt = D.h * Math.exp(-dLat * dLat);
@@ -326,31 +326,31 @@ export class GrooveModel {
       const q = r();
       let scratchKind, gouge, burr, width, wallR;
       if (q < 0.28) {
-        scratchKind = 'hairline';     // 浅い擦り傷。ほぼ見た目主体だが接触帯に入るとチッと出る
+        scratchKind = 'hairline';     // Shallow scratch. Mostly visual, but produces a "tick" when entering contact zone
         gouge = (0.2 + 1.3 * r()) * 1e-6;
         burr = (0.1 + 0.9 * r()) * 1e-6;
         width = (18 + 55 * r()) * 1e-6;
         wallR = 0.65 + 0.30 * r();
       } else if (q < 0.63) {
-        scratchKind = 'plough';       // 削れと縁バリが同居
+        scratchKind = 'plough';       // Combined gouge and edge burr
         gouge = (4 + 10 * r()) * 1e-6;
         burr = (6 + 14 * r()) * 1e-6;
         width = (10 + 28 * r()) * 1e-6;
         wallR = 0.35 + 0.55 * r();
       } else if (q < 0.80) {
-        scratchKind = 'burr';         // 押し出し/剥離片優勢。針飛びを起こしやすい
+        scratchKind = 'burr';         // Dominant extrusion/peeling. Prone to causing skips
         gouge = (1 + 5 * r()) * 1e-6;
         burr = (12 + 18 * r()) * 1e-6;
         width = (8 + 24 * r()) * 1e-6;
         wallR = 0.25 + 0.55 * r();
       } else if (q < 0.95) {
-        scratchKind = 'cut';          // 欠損優勢。接触喪失・ザッという歪みが主
+        scratchKind = 'cut';          // Dominant loss of material. Main effect is contact loss and "scratchy" distortion
         gouge = (8 + 14 * r()) * 1e-6;
         burr = (1 + 6 * r()) * 1e-6;
         width = (10 + 34 * r()) * 1e-6;
         wallR = 0.30 + 0.55 * r();
       } else {
-        scratchKind = 'chip';         // 片壁寄りの深い欠け。少数だがミストラックが強い
+        scratchKind = 'chip';         // Deep chip near one wall. Rare, but causes strong mistracking
         gouge = (12 + 16 * r()) * 1e-6;
         burr = (6 + 22 * r()) * 1e-6;
         width = (12 + 30 * r()) * 1e-6;
@@ -416,7 +416,7 @@ export class GrooveModel {
   }
 }
 
-// 壁法線・接線ベクトル (断面内)
+// Wall normal and tangent vectors (within cross-section)
 export const N_L = { x: Math.SQRT1_2, y: Math.SQRT1_2 };
 export const N_R = { x: -Math.SQRT1_2, y: Math.SQRT1_2 };
 export const U_L = { x: Math.SQRT1_2, y: Math.SQRT1_2 };   // Lチャンネル変調方向
