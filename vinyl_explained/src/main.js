@@ -195,8 +195,9 @@ $('signalType').value = params.signalType;
 $('signalType').addEventListener('change', () => {
   params.signalType = $('signalType').value;
   $('sineRow').style.display = params.signalType === 'sine' ? '' : 'none';
-  // 純音は音楽ピーク基準(+12dB)では変位31.7µm→オーバーカットリミッタ(25µm)で
-  // 台形化するため、sine選択時は基準0dB(5cm/s, 変位8µm)へ。pink復帰で既定に戻す
+  // For sine waves, the displacement at music peak level (+12dB) is 31.7µm, which would be
+  // clipped by the overcut limiter (25µm). Therefore, set to 0dB (5cm/s, 8µm displacement) when sine is selected.
+  // Revert to default when returning to pink noise.
   if (params.signalType === 'sine') params.levelDb = 0;
   else if (params.signalType === 'pink') params.levelDb = defaultParams().levelDb;
   syncRange('levelDb');

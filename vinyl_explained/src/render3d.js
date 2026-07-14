@@ -689,8 +689,8 @@ float contactDent(float t, float z, vec4 c, float rz) {
 float grooveProfile(float x, float z, vec4 w) {
   float a0 = 1.4142135624 * w.x - x;
   float b0 = 1.4142135624 * w.y + x;
-  // 視覚上の弾性変形: 物理のめり込み量δだけPVC壁が外側へ局所変位する。
-  // 物理計算はWinkler基礎で別途解いており、ここでは貫通表示を避けるための表示変形のみ。
+  // Visual elastic deformation: PVC wall locally displaces outward by the physical indentation amount δ.
+  // Physical calculations are solved separately using Winkler foundation; this is for visual representation only to avoid clipping.
   float tL = 0.7071067812 * (a0 - x);
   float tR = 0.7071067812 * (b0 + x);
   float dL = 0.0;

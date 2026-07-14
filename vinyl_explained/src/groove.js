@@ -71,7 +71,7 @@ export class GrooveModel {
     this.sigShiftR = new Float32Array(SIG_LEN);
     this.refVelL = new Float32Array(SIG_LEN);  // For measurement: input cutter velocity
     this.refVelR = new Float32Array(SIG_LEN);
-    this.sigN = -1; // 生成済み最終サンプル番号
+    this.sigN = -1; // Last generated sample index
 
     // Roughness ring (independent per wall): vis=visible roughness, felt=roughness felt by stylus (κ applied)
     this.roughVisL = new Float32Array(ROUGH_LEN);
@@ -95,10 +95,10 @@ export class GrooveModel {
     // Dust
     this.dust = [];           // {s, wall(0=L,1=R,2=scratch,3=groove bottom), loc, kind, h, w, hFelt, amp, top?, crushed}
     this.dustRng = makeRng(seed ^ 0xdeadbe);
-    this.gaussD = makeGauss(this.dustRng); // 粒径の対数正規分布用
+    this.gaussD = makeGauss(this.dustRng); // For log-normal distribution of particle size
     this.spawnAhead = 400e-6; // Appear 400µm ahead of stylus (so approach is visible)
     this.dustHits = 0;        // Cumulative count of particles hit by stylus (converted to rate in UI)
-    this.activeDust = [];     // 針近傍の埃 (塑性圧縮の対象キャッシュ, advanceDustで更新)
+    this.activeDust = [];     // Cache for plastic crushing, updated in advanceDust
   }
 
   // Ensure generation up to sMax [m]
