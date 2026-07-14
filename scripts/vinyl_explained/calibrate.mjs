@@ -1,13 +1,13 @@
-// キャリブレーション & 物理検証スクリプト (Node)
-// 1) ピンクノイズ正規化定数の実測
-// 2) 1kHz正弦波の再現性 (レベル/THD) — 物理チェーンの妥当性検証
-// 3) 無音時ノイズ→SNR測定とσキャリブレーション (目標60dB = DR72dB @ ピーク+12dB)
-// 4) ピンクノイズでのミストラック確認
+// Calibration & Physical Verification Script (Node)
+// 1) Measure pink noise normalization constant
+// 2) 1kHz sine wave reproducibility (level/THD) — verify physical chain validity
+// 3) Silence noise → SNR measurement and σ calibration (target 60dB = DR72dB @ peak +12dB)
+// 4) Mistrack verification with pink noise
 import { defaultParams, sigmaToBits } from '../../vinyl_explained/src/params.js';
 import { makeRng, makeGauss } from '../../vinyl_explained/src/dsp.js';
 import { Measurement, computeSnr, computeThd, calibrateSigma, goertzelRms } from '../../vinyl_explained/src/analysis.js';
 
-// --- 1) Kellet pinkフィルタの生RMS実測 ---
+// --- 1) Measure raw RMS of Kellet pink filter ---
 {
   const g = makeGauss(makeRng(42));
   let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, sum = 0;
@@ -24,12 +24,12 @@ import { Measurement, computeSnr, computeThd, calibrateSigma, goertzelRms } from
     b6 = w * 0.115926;
     sum += out * out;
   }
-  console.log(`[1] pink raw RMS = ${Math.sqrt(sum / N).toFixed(4)} (dsp.js PINK_RMS に反映)`);
+  console.log(`[1] pink raw RMS = ${Math.sqrt(sum / N).toFixed(4)} (reflect in dsp.js PINK_RMS)`);
 }
 
 const base = defaultParams();
 
-// --- 1b) ピンクノイズのチェーン通過後ピーク速度 (レベル正規化用) ---
+// --- 1b) Peak velocity of pink noise after passing through the chain (for level normalization) ---
 {
   const { SignalGenerator } = await import('../../vinyl_explained/src/dsp.js');
   const p = { ...base, signalType: 'pink', levelDb: 0 };
@@ -41,11 +41,11 @@ const base = defaultParams();
     const a = Math.max(Math.abs(vL), Math.abs(vR));
     if (a > peak) peak = a;
   }
-  console.log(`[1b] pink peak vel = ${(peak * 100).toFixed(2)} cm/s (levelDb=0時)` +
-    ` → dsp.js PINK_PEAK_VEL に「現行正規化での実測値×補正」を反映`);
+  console.log(`[1b] pink peak vel = ${(peak * 100).toFixed(2)} cm/s (at levelDb=0)` +
+    ` → reflect "measured value × correction at current normalization" in dsp.js PINK_PEAK_VEL`);
 }
 
-// --- 2) 1kHz正弦波検証 ---
+// --- 2) 1kHz sine wave verification ---
 {
   const m = new Measurement(base, {
     signalType: 'sine', sineFreq: 1000, levelDb: 0,
@@ -54,28 +54,28 @@ const base = defaultParams();
   const res = await m.run();
   const amp = goertzelRms(res.outDeL, res.fs, 1000);
   const thd = computeThd(res, 1000);
-  console.log(`[2] 1kHz sine: 出力=${(amp * 100).toFixed(3)} cm/s RMS (期待≈5·√½=3.54: L=M/√2)  ` +
+  console.log(`[2] 1kHz sine: output=${(amp * 100).toFixed(3)} cm/s RMS (expected ≈5·√½=3.54: L=M/√2)  ` +
     `THD=${thd.thdPct.toFixed(3)}%  mistrack/s=${res.mistrackPerSec.toFixed(1)} skip/s=${res.skipPerSec}`);
 }
 
-// --- 3) σキャリブレーション ---
+// --- 3) σ calibration ---
 {
   const m0 = new Measurement(base, { signalType: 'silence', dustRate: 0, staticRate: 0 }, 0.35);
   const r0 = await m0.run();
   const s0 = computeSnr(r0);
-  console.log(`[3] 既定σ=${(base.roughSigma * 1e9).toFixed(2)}nm → SNR=${s0.snr.toFixed(2)}dB (${s0.bits.toFixed(2)}bit)`);
+  console.log(`[3] default σ=${(base.roughSigma * 1e9).toFixed(2)}nm → SNR=${s0.snr.toFixed(2)}dB (${s0.bits.toFixed(2)}bit)`);
   const sigma = await calibrateSigma(base, 60);
   const mv = new Measurement(base, {
     signalType: 'silence', dustRate: 0, staticRate: 0, roughSigma: sigma,
   }, 0.35);
   const rv = await mv.run();
   const sv = computeSnr(rv);
-  console.log(`    キャリブ後 σ=${(sigma * 1e9).toFixed(2)}nm → SNR=${sv.snr.toFixed(2)}dB (${sv.bits.toFixed(2)}bit)  ` +
-    `目盛り換算=${sigmaToBits(sigma, base.fullScaleDisp).toFixed(2)}bit`);
-  console.log(`    → params.js の roughSigma 既定値に ${(sigma * 1e9).toFixed(2)}e-9 を設定`);
+  console.log(`    after calib σ=${(sigma * 1e9).toFixed(2)}nm → SNR=${sv.snr.toFixed(2)}dB (${sv.bits.toFixed(2)}bit)  ` +
+    `ruler equiv=${sigmaToBits(sigma, base.fullScaleDisp).toFixed(2)}bit`);
+  console.log(`    → set ${(sigma * 1e9).toFixed(2)}e-9 as default roughSigma in params.js`);
 }
 
-// --- 4) ピンクノイズ動作確認 ---
+// --- 4) Pink noise operation check ---
 {
   const m = new Measurement(base, { dustRate: 0, staticRate: 0 }, 0.3);
   const res = await m.run();
@@ -84,6 +84,6 @@ const base = defaultParams();
     rin += res.inDeL[i] ** 2; rout += res.outDeL[i] ** 2;
   }
   rin = Math.sqrt(rin / res.inDeL.length); rout = Math.sqrt(rout / res.outDeL.length);
-  console.log(`[4] pink: 入力=${(rin * 100).toFixed(2)}cm/s 出力=${(rout * 100).toFixed(2)}cm/s ` +
+  console.log(`[4] pink: input=${(rin * 100).toFixed(2)}cm/s output=${(rout * 100).toFixed(2)}cm/s ` +
     `mistrack/s=${res.mistrackPerSec.toFixed(1)} skip/s=${res.skipPerSec}`);
 }
